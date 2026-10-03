@@ -9,9 +9,22 @@ an arrow carries the mailbox decorations of the process that runs it, written
 Decorations are written explicitly. Their inference (Section 8 of the paper) needs
 type variables and tallying, which the Elixir compiler does not provide yet.
 
-**Status:** early work in progress. The accepted language is specified in
-[GRAMMAR.md](GRAMMAR.md). [examples/](examples/) holds the examples of the paper,
-which will become the test suite.
+**Status:** work in progress. The checker implements Sections 3–6 on the language
+specified in [GRAMMAR.md](GRAMMAR.md), which also lists the deviations that Descr
+imposes (no integer singleton types, no recursive types). [examples/](examples/)
+holds the examples of Sections 2, 4.1 and 6.3 of the paper; the test suite checks
+that each reports errors exactly on the lines marked `# error:`.
+
+## Usage
+
+```
+mix typecheck examples/dispatcher.exs examples/dispatcher_errors.exs
+mix test
+```
+
+For an accepted program, `mix typecheck` prints the annotated functions and the type
+of the main process; otherwise it prints the errors, one per line, as
+`file:line: error: message`.
 
 ## Requirements
 
@@ -41,3 +54,22 @@ compiler, so the version is pinned in `mix.exs`.
 - **Front end.** Annotation lines (`$`, `$type`, `$interface`, `$self_interface`) are
   extracted and replaced by blank lines; the rest is parsed by
   `Code.string_to_quoted/2`.
+
+## Printing types
+
+Types in messages are read back from Descr into the syntax of annotations. Two
+limits: type names are not recovered, so a defined type such as `worker` is printed
+expanded; and Descr's printer drops negated arrows and pid types, so a type such as
+`fun() and not (integer() -> integer())` is printed as `fun()`. Neither affects
+checking.
+
+## Layout
+
+| module | role |
+|---|---|
+| `ProcessTypes.Types` | the encoding into Descr, the only module that calls it |
+| `ProcessTypes.TypeSyntax` | annotation types: parsing, names, meaning, printing |
+| `ProcessTypes.Annotations` | extraction of the annotation lines |
+| `ProcessTypes.Frontend` | from Elixir code to the core syntax of the checker |
+| `ProcessTypes.Checker` | the typing rules |
+| `ProcessTypes.Backend` | how the checker discharges constraints (`Ground`: at once) |

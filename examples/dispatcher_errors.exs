@@ -1,11 +1,15 @@
-# Section 2: the three client sends that the worker's interface rejects.
+# Section 2: the client sends that the worker's interface rejects: two messages,
+# and two jobs that overstep, one on the write side and one on the read side.
 # The Server module is the one of dispatcher.exs.
 # Expected: rejected, with one error on each line marked "error:".
 
 defmodule Server do
-  $type job    = (-> term())@[:bump, term()]
-  $type worker = :bump or {:work_add, integer()} or {:total, pid({:total, integer()})}
-                 or {:run, job}
+  $type job_writes = :bump or {:work_add, integer()}
+  $type job_reads  = :bump or {:work_add, integer()} or {:total, pid({:total, integer()})}
+                     or {:run, fun()}
+  $type job        = (-> term())@[job_writes, job_reads]
+  $type worker     = :bump or {:work_add, integer()} or {:total, pid({:total, integer()})}
+                     or {:run, job}
 
   $ (-> none())@[none(), {:connect, pid({:ready, pid(worker)})}]
   def dispatcher do
@@ -46,7 +50,8 @@ send(d, {:connect, self()})
 
 receive do
   {:ready, w} ->
-    send(w, {:wrk_add, 12})                          # error: no message of worker has tag :wrk_add
-    send(w, {:total, 42})                            # error: 42 is not a pid({:total, integer()})
-    send(w, {:run, fn -> send(self(), :tick) end})   # error: a job's self() accepts only :bump
+    send(w, {:wrk_add, 12})                                # error: no message of worker has tag :wrk_add
+    send(w, {:total, 42})                                  # error: 42 is not a pid({:total, integer()})
+    send(w, {:run, fn -> send(self(), :tick) end})         # error: a job sends only job_writes to its runner
+    send(w, {:run, fn -> receive do x -> x + 1 end end})   # error: the job may read :bump, and :bump + 1 fails
 end

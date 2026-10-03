@@ -1,6 +1,7 @@
 # The accepted language
 
-*Draft for review. Nothing below is implemented yet.*
+*Implemented by the prototype (`mix typecheck FILE`). Where Descr forces a deviation
+from the paper, §8 says so.*
 
 The prototype type-checks programs (it never runs them) against the type system of
 Sections 3–6 of the paper, with every decoration explicit. A program is a fragment of
@@ -102,13 +103,15 @@ test ::= is_integer | is_atom | is_boolean | is_tuple | is_pid | is_function
   `pid()` and `fun()`. The clause is read as its patterns with every tested x replaced
   by the pattern x ∧ τₓ (Section 3 of the paper). For example, `x when is_integer(x)`
   is x ∧ `integer()`.
+- An integer literal in a pattern is approximated, since there are no integer
+  singleton types (§8).
 
 ## 5. Types
 
 ### 5.1 Syntax
 
 ```
-T ::= n | :a | true | false | nil                singleton types
+T ::= :a | true | false | nil                    singleton types (atoms only, §8)
     | integer() | atom() | boolean() | tuple() | term() | none()
     | pid() | pid(T) | fun()
     | {T, …, T}                                   tuple types
@@ -174,7 +177,7 @@ Recursive types will come with the move to a version of Descr that has them.
 | `$ L` followed by the clauses of `f` | f = λ^L y. `case` y `do` P₁ → b₁ … `end`, where Pⱼ is the tuple of the patterns of clause j (its pattern if the arity is 1), with its guard read as in §4 | t-abs, t-case |
 | `f(e₁, …, eₙ)`, `e.(e₁, …, eₙ)` | f {e₁, …, eₙ} if n ≠ 1, f e₁ if n = 1 | t-app |
 | `$interface T` with `spawn(fn -> b end)` | spawn(b, T), as in Section 5 | t-spawn (b typed at [T, T]) |
-| `$interface T` with `spawn(e)` | spawn(e {}, T) | t-spawn, t-app |
+| `$interface T` with `spawn(e)` | `case` e `do` f → spawn(f {}, T) `end`, f fresh: the spawning process evaluates e, the spawned one calls it | t-case, t-spawn, t-app |
 | `s; b` | `case` s `do` _ → b `end` | t-case |
 | `p = e; b` | `case` e `do` p → b `end`, which must be exhaustive | t-case |
 | `p = e` as last statement | `case` e `do` p ∧ y → y `end`, y fresh | t-case |
@@ -188,10 +191,22 @@ Named functions are recursive through their annotations: the calculus has no rec
 and encodes it with a fixpoint combinator (Section 3), which the annotations make
 unnecessary here.
 
-## 8. Not supported
+## 8. Deviations from the paper, and what is not supported
 
-Floats, strings, binaries, lists, maps and structs; the pin operator `^x` and repeated
-pattern variables; guards other than type tests on variables; `receive … after`;
-`cond`, `with`, `for`, `try` and `unless`; captures `&f/1`; default arguments; `alias`,
-`import` and nested modules; `spawn/3` and the rest of `Process` and OTP; `dynamic()`;
-recursive types.
+Descr, the type representation of the Elixir compiler, imposes two deviations.
+
+- **No integer singleton types.** An integer literal has type `integer()`, and `n` is
+  not a type. In a pattern, a literal n refines the matched type as `integer()` would,
+  but it is neither subtracted from the types of the later clauses nor counted when
+  checking that the clauses are exhaustive. Both approximations are sound.
+- **No recursive types.** A `$type` definition may not mention itself, directly or
+  through other definitions. Hence `send(self(), self())` and the interfaces that
+  mention their own pid are out of reach, and so is the most precise type of the jobs
+  of Section 2, whose input decoration is the interface of the worker that runs them.
+  A supertype without recursion often suffices: see [examples/dispatcher.exs](examples/dispatcher.exs).
+
+Not supported: floats, strings, binaries, lists, maps and structs; the pin operator `^x`
+and repeated pattern variables; guards other than type tests on variables; `receive …
+after`; `cond`, `with`, `for`, `try` and `unless`; captures `&f/1`; default arguments;
+`alias`, `import` and nested modules; `spawn/3` and the rest of `Process` and OTP;
+`dynamic()`.
