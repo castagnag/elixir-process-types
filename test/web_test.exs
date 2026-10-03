@@ -1,0 +1,50 @@
+defmodule ProcessTypes.WebTest do
+  use ExUnit.Case, async: true
+
+  import Plug.Conn
+  import Plug.Test
+
+  alias ProcessTypes.Web
+
+  @opts Web.init([])
+
+  defp call(method, path, body \\ nil) do
+    conn = conn(method, path, body && JSON.encode!(body))
+    conn = if body, do: put_req_header(conn, "content-type", "application/json"), else: conn
+    Web.call(conn, @opts)
+  end
+
+  test "the page" do
+    conn = call(:get, "/")
+    assert conn.status == 200
+    assert conn.resp_body =~ "<title>Process types playground</title>"
+  end
+
+  test "the examples, the running example first" do
+    conn = call(:get, "/examples")
+    assert conn.status == 200
+    [first | _] = examples = JSON.decode!(conn.resp_body)
+    assert first["name"] == "dispatcher"
+    assert "mixing_write" in Enum.map(examples, & &1["name"])
+  end
+
+  test "an accepted program" do
+    conn = call(:post, "/check", %{source: "$self_interface :a\nsend(self(), :a)\n"})
+    assert conn.status == 200
+    assert %{"ok" => true, "diagnostics" => [], "main" => ":a"} = JSON.decode!(conn.resp_body)
+    assert get_resp_header(conn, "access-control-allow-origin") == ["*"]
+  end
+
+  test "a rejected program" do
+    conn = call(:post, "/check", %{source: "$self_interface :a\nsend(self(), :b)\n"})
+
+    assert %{"ok" => false, "diagnostics" => [%{"line" => 2, "message" => message}]} =
+             JSON.decode!(conn.resp_body)
+
+    assert message =~ "accepts :a, not :b"
+  end
+
+  test "a request without source" do
+    assert call(:post, "/check", %{program: "x"}).status == 400
+  end
+end

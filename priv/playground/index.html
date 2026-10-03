@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Process types playground</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f7f6f3;
+    --surface: #ffffff;
+    --text: #1c1c1e;
+    --muted: #6e6e73;
+    --border: #dedbd5;
+    --accent: #8c1c3a;
+    --on-accent: #ffffff;
+    --good: #1e7a4c;
+    --good-bg: #e6f3eb;
+    --bad: #b42318;
+    --bad-bg: #fcebea;
+    --kw: #2f4f9e;
+    --atom: #8a5a00;
+    --cmt: #85858b;
+    --ann: #8c1c3a;
+    --sel: #c9d7f2;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161618;
+      --surface: #1f1f22;
+      --text: #e8e8ea;
+      --muted: #9a9aa0;
+      --border: #34343a;
+      --accent: #c2476a;
+      --on-accent: #ffffff;
+      --good: #6fd19b;
+      --good-bg: #17301f;
+      --bad: #ff8a80;
+      --bad-bg: #3a1d1b;
+      --kw: #8fb0ff;
+      --atom: #e0b35a;
+      --cmt: #7d7d84;
+      --ann: #ec8aa5;
+      --sel: #33415e;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.45 var(--sans);
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 24px;
+    align-items: center;
+    justify-content: space-between;
+  }
+  h1 { font-size: 17px; margin: 0; font-weight: 650; }
+  header p { margin: 2px 0 0; color: var(--muted); font-size: 13.5px; }
+  .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  select, button { font: inherit; font-size: 14px; }
+  select {
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    max-width: 100%;
+  }
+  button.primary {
+    padding: 6px 14px;
+    border: 0;
+    border-radius: 6px;
+    background: var(--accent);
+    color: var(--on-accent);
+    cursor: pointer;
+  }
+  #status { color: var(--muted); font-size: 13px; min-width: 9em; }
+  #status.bad { color: var(--bad); }
+  main {
+    flex: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    min-height: 0;
+  }
+  .editor-pane { display: flex; min-height: 0; border-right: 1px solid var(--border); background: var(--surface); }
+  #gutter {
+    flex: none;
+    width: 3.4em;
+    overflow: hidden;
+    padding: 12px 8px 12px 0;
+    text-align: right;
+    color: var(--muted);
+    font: 13px/1.55 var(--mono);
+    user-select: none;
+    border-right: 1px solid var(--border);
+  }
+  #gutter .err { color: var(--bad); font-weight: 700; }
+  .editor { position: relative; flex: 1; min-width: 0; }
+  #code, #editor {
+    margin: 0;
+    padding: 12px 14px;
+    font: 13px/1.55 var(--mono);
+    white-space: pre;
+    tab-size: 2;
+    border: 0;
+  }
+  #code { position: absolute; inset: 0; overflow: hidden; pointer-events: none; color: var(--text); }
+  #editor {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    resize: none;
+    outline: none;
+    background: transparent;
+    color: transparent;
+    caret-color: var(--text);
+    overflow: auto;
+  }
+  #editor::selection { background: var(--sel); }
+  .kw { color: var(--kw); }
+  .prim { color: var(--kw); font-weight: 600; }
+  .atom { color: var(--atom); }
+  .cmt { color: var(--cmt); font-style: italic; }
+  .ann { color: var(--ann); }
+  .results-pane { padding: 16px 20px 24px; overflow: auto; min-height: 0; }
+  .verdict { display: inline-block; padding: 3px 12px; border-radius: 999px; font-weight: 650; font-size: 14px; }
+  .verdict.good { background: var(--good-bg); color: var(--good); }
+  .verdict.bad { background: var(--bad-bg); color: var(--bad); }
+  h2 { font-size: 12.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 20px 0 6px; font-weight: 600; }
+  .rows div { font: 13px/1.5 var(--mono); padding: 3px 0; overflow-wrap: anywhere; }
+  .rows .name { color: var(--muted); }
+  ul.diags { list-style: none; padding: 0; margin: 14px 0 0; }
+  ul.diags li { display: flex; gap: 10px; align-items: baseline; padding: 9px 0; border-top: 1px solid var(--border); }
+  button.line {
+    flex: none;
+    font: 12px/1.6 var(--mono);
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--surface);
+    color: var(--bad);
+    cursor: pointer;
+  }
+  .message { font: 13px/1.5 var(--mono); overflow-wrap: anywhere; }
+  details.syntax { margin-top: 28px; border-top: 1px solid var(--border); padding-top: 12px; }
+  details.syntax summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+  details.syntax table { border-collapse: collapse; margin-top: 10px; font-size: 13.5px; }
+  details.syntax td { padding: 5px 12px 5px 0; vertical-align: top; }
+  details.syntax td:first-child { white-space: nowrap; }
+  details.syntax code { font: 12.5px var(--mono); }
+  @media (max-width: 860px) {
+    header { padding: 12px 16px; }
+    main { grid-template-columns: 1fr; grid-template-rows: 62vh auto; }
+    .editor-pane { border-right: 0; border-bottom: 1px solid var(--border); }
+    .results-pane { padding: 16px; }
+    details.syntax td:first-child { white-space: normal; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Process types playground</h1>
+    <p>Type-checks the Elixir fragment of Sections 3–6 of the paper, with explicit decorations.</p>
+  </div>
+  <div class="controls">
+    <select id="examples" aria-label="Load an example">
+      <option value="">Load an example…</option>
+    </select>
+    <button id="check" class="primary" type="button" title="Ctrl/⌘ + Enter">Check</button>
+    <span id="status" role="status"></span>
+  </div>
+</header>
+<main>
+  <section class="editor-pane" aria-label="Program">
+    <div id="gutter" aria-hidden="true"></div>
+    <div class="editor">
+      <pre id="code" aria-hidden="true"></pre>
+      <textarea id="editor" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" aria-label="Program source"></textarea>
+    </div>
+  </section>
+  <section class="results-pane" aria-label="Result">
+    <div id="results"></div>
+    <details class="syntax">
+      <summary>Syntax</summary>
+      <table>
+        <tr><td><code>$ L</code></td><td>before a <code>def</code> or an <code>fn</code>: its type, an intersection of arrows</td></tr>
+        <tr><td><code>$interface T</code></td><td>before a <code>spawn</code>: the interface of the spawned process</td></tr>
+        <tr><td><code>$self_interface T</code></td><td>the interface of the main process (default <code>term()</code>)</td></tr>
+        <tr><td><code>$type name = T</code></td><td>a type definition, not recursive</td></tr>
+        <tr><td><code>(s, … -> t)@[o, i]</code></td><td>an arrow typed at the bracket [o, i]: in its body <code>self()</code> has type <code>pid(o)</code> and <code>receive</code> reads at <code>i</code>; without <code>@[…]</code>, the bracket is <code>[none(), term()]</code></td></tr>
+        <tr><td><code>pid(T)</code>, <code>pid()</code>, <code>fun()</code></td><td>pid types, the top process type, the top function type</td></tr>
+        <tr><td><code>:a</code>, <code>{T, …}</code>, <code>integer()</code>, …</td><td>as in Elixir, with <code>or</code>, <code>and</code>, <code>not</code></td></tr>
+        <tr><td><code>x when is_integer(x)</code></td><td>guards are type tests on variables</td></tr>
+        <tr><td><code>fn -> … end</code></td><td>unannotated, takes its bracket from the expected type</td></tr>
+        <tr><td>Ctrl/⌘ + Enter</td><td>check now; checks also run as you type</td></tr>
+      </table>
+    </details>
+  </section>
+</main>
+<script>
+(() => {
+  const API = window.PLAYGROUND_API || "";
+  const STORE = "process-types-playground";
+  const $ = (id) => document.getElementById(id);
+  const editor = $("editor"), code = $("code"), gutter = $("gutter"), results = $("results"),
+        picker = $("examples"), status = $("status"), checkButton = $("check");
+  let examples = [], timer = null, seq = 0, errorLines = new Set();
+
+  // Highlighting: annotation lines (and their continuations) in bordeaux, as in the paper.
+  const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const TOKEN = /(#.*$)|(:[A-Za-z_]\w*[?!]?)|\b(defmodule|defp|def|do|end|fn|receive|case|if|else|when|and|or|not)\b|\b(self|send|spawn)\b/g;
+
+  function highlight(text) {
+    let annotation = false;
+    return text.split("\n").map((line) => {
+      const trimmed = line.trimStart();
+      annotation = trimmed.startsWith("$") || (annotation && /^(or|and)\b/.test(trimmed));
+      if (annotation) return `<span class="ann">${esc(line)}</span>`;
+      let out = "", last = 0;
+      line.replace(TOKEN, (m, comment, atom, keyword, primitive, offset) => {
+        const cls = comment ? "cmt" : atom ? "atom" : keyword ? "kw" : "prim";
+        out += esc(line.slice(last, offset)) + `<span class="${cls}">${esc(m)}</span>`;
+        last = offset + m.length;
+        return m;
+      });
+      return out + esc(line.slice(last));
+    }).join("\n") + "\n";
+  }
+
+  function refresh() {
+    code.innerHTML = highlight(editor.value);
+    const n = editor.value.split("\n").length;
+    let numbers = "";
+    for (let i = 1; i <= n; i++) numbers += errorLines.has(i) ? `<div class="err">${i}</div>` : `<div>${i}</div>`;
+    gutter.innerHTML = numbers;
+    sync();
+  }
+
+  function sync() {
+    code.scrollTop = editor.scrollTop;
+    code.scrollLeft = editor.scrollLeft;
+    gutter.scrollTop = editor.scrollTop;
+  }
+
+  function setStatus(text, bad = false) {
+    status.textContent = text;
+    status.classList.toggle("bad", bad);
+  }
+
+  async function check() {
+    clearTimeout(timer);
+    const id = ++seq, started = performance.now();
+    setStatus("checking…");
+    try {
+      const response = await fetch(API + "/check", {
+        method: "POST",
+        headers: {"content-type": "application/json"},
+        body: JSON.stringify({source: editor.value})
+      });
+      const data = await response.json();
+      if (id !== seq) return;
+      render(data);
+      setStatus(`checked in ${Math.round(performance.now() - started)} ms`);
+    } catch (e) {
+      if (id === seq) setStatus("the server does not answer", true);
+    }
+  }
+
+  function element(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+
+  function rows(title, pairs) {
+    const box = element("div", "rows");
+    for (const [name, type] of pairs) {
+      const row = element("div");
+      row.append(element("span", "name", name + " : "), document.createTextNode(type));
+      box.append(row);
+    }
+    return [element("h2", null, title), box];
+  }
+
+  function render(data) {
+    results.replaceChildren();
+    errorLines = new Set();
+    if (data.error) {
+      results.append(element("span", "verdict bad", data.error));
+    } else if (data.ok) {
+      results.append(element("span", "verdict good", "accepted"));
+      if (data.functions.length) results.append(...rows("Functions", data.functions.map((f) => [f.name, f.type])));
+      if (data.main) results.append(...rows("Main process", [["body", data.main]]));
+    } else {
+      const n = data.diagnostics.length;
+      results.append(element("span", "verdict bad", n === 1 ? "1 error" : `${n} errors`));
+      const list = element("ul", "diags");
+      for (const d of data.diagnostics) {
+        errorLines.add(d.line);
+        const item = element("li");
+        const jump = element("button", "line", `line ${d.line}`);
+        jump.type = "button";
+        jump.addEventListener("click", () => goTo(d.line));
+        item.append(jump, element("span", "message", d.message));
+        list.append(item);
+      }
+      results.append(list);
+    }
+    refresh();
+  }
+
+  function goTo(line) {
+    const lines = editor.value.split("\n");
+    let start = 0;
+    for (let i = 0; i < line - 1 && i < lines.length; i++) start += lines[i].length + 1;
+    editor.focus();
+    editor.setSelectionRange(start, start + (lines[line - 1] || "").length);
+    const height = parseFloat(getComputedStyle(editor).lineHeight) || 20;
+    editor.scrollTop = Math.max(0, (line - 4) * height);
+    sync();
+  }
+
+  function save() { try { localStorage.setItem(STORE, editor.value); } catch (e) {} }
+  function restore() { try { return localStorage.getItem(STORE); } catch (e) { return null; } }
+
+  function use(example) {
+    editor.value = example.source;
+    editor.scrollTop = 0;
+    picker.value = example.name;
+    save();
+    refresh();
+    check();
+  }
+
+  editor.addEventListener("input", () => {
+    save();
+    refresh();
+    clearTimeout(timer);
+    timer = setTimeout(check, 400);
+  });
+  editor.addEventListener("scroll", sync);
+  editor.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      e.preventDefault();
+      check();
+    } else if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      editor.setRangeText("  ", editor.selectionStart, editor.selectionEnd, "end");
+      editor.dispatchEvent(new Event("input"));
+    } else if (e.key === "Escape") {
+      editor.blur();
+    }
+  });
+  checkButton.addEventListener("click", check);
+  picker.addEventListener("change", () => {
+    const example = examples.find((x) => x.name === picker.value);
+    if (example) use(example);
+  });
+
+  (async () => {
+    try {
+      examples = await (await fetch(API + "/examples")).json();
+    } catch (e) {
+      examples = [];
+    }
+    for (const example of examples) picker.append(new Option(example.name, example.name));
+    // ?example=name opens that example, otherwise the last program is restored
+    const wanted = examples.find((x) => x.name === new URLSearchParams(location.search).get("example"));
+    const saved = restore();
+    if (wanted) {
+      use(wanted);
+    } else if (saved) {
+      editor.value = saved;
+      refresh();
+      check();
+    } else if (examples.length) {
+      use(examples[0]);
+    } else {
+      refresh();
+      setStatus("the server does not answer", true);
+    }
+  })();
+})();
+</script>
+</body>
+</html>

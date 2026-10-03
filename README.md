@@ -26,6 +26,22 @@ For an accepted program, `mix typecheck` prints the annotated functions and the 
 of the main process; otherwise it prints the errors, one per line, as
 `file:line: error: message`.
 
+## Playground
+
+```
+mix playground            # http://localhost:4000
+mix playground --port 4100
+```
+
+The playground is a page where a program is checked as it is written. The examples
+can be loaded from a menu, or directly with `?example=name` (e.g.
+`http://localhost:4000/?example=dispatcher_errors`), and each error links to its line.
+The server listens on localhost only. Its API (`GET /examples`, `POST /check` with
+`{"source": ...}`) answers with CORS headers, so that the page can also be served
+statically, with `window.PLAYGROUND_API` set to the address of the server. Before
+exposing the server publicly, note that every program creates atoms (its identifiers
+and literals), which the BEAM never collects: requests must then be limited.
+
 ## Requirements
 
 Elixir 1.20.x (developed with 1.20.4 on OTP 29). Types are built with
@@ -76,3 +92,4 @@ checking.
 | `ProcessTypes.Frontend` | from Elixir code to the core syntax of the checker |
 | `ProcessTypes.Checker` | the typing rules |
 | `ProcessTypes.Backend` | how the checker discharges constraints (`Ground`: at once) |
+| `ProcessTypes.Web` | the playground server; its page is `priv/playground/index.html` |
