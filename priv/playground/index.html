@@ -90,10 +90,53 @@
   main {
     flex: 1;
     display: grid;
-    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    grid-template-columns: var(--cols, minmax(0, 3fr) 8px minmax(0, 2fr));
     min-height: 0;
   }
-  .editor-pane { display: flex; min-height: 0; border-right: 1px solid var(--border); background: var(--surface); }
+  .editor-pane { display: flex; min-height: 0; background: var(--surface); }
+  #splitter {
+    cursor: col-resize;
+    background: var(--border);
+    touch-action: none;
+    outline: none;
+  }
+  #splitter:hover, #splitter:focus-visible, #splitter.dragging { background: var(--accent); }
+  body.dragging { cursor: col-resize; user-select: none; }
+  button.docs {
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+  }
+  dialog#docs {
+    width: min(860px, 94vw);
+    height: min(86vh, 900px);
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--text);
+  }
+  dialog#docs[open] { display: flex; flex-direction: column; }
+  dialog#docs::backdrop { background: rgba(0, 0, 0, .4); }
+  .docs-bar { display: flex; gap: 8px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--border); }
+  .docs-bar .spacer { flex: 1; }
+  .docs-bar button { padding: 4px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); cursor: pointer; }
+  .docs-bar button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  #docs-body { flex: 1; overflow: auto; padding: 4px 24px 24px; }
+  #docs-body h1, #docs-body h3, #docs-body h4 { font-size: 17px; margin: 22px 0 8px; }
+  #docs-body h1 { font-size: 21px; }
+  #docs-body h2 { font-size: 18px; text-transform: none; letter-spacing: 0; color: var(--text); margin: 26px 0 8px; }
+  #docs-body p, #docs-body li { margin: 8px 0; }
+  #docs-body ul, #docs-body ol { padding-left: 22px; margin: 6px 0; }
+  #docs-body code { font: 12.5px var(--mono); background: var(--bg); padding: 1px 4px; border-radius: 4px; }
+  #docs-body pre { background: var(--bg); padding: 10px 14px; border-radius: 6px; overflow: auto; }
+  #docs-body pre code { padding: 0; background: none; font-size: 13px; line-height: 1.5; }
+  #docs-body table { border-collapse: collapse; margin: 10px 0; font-size: 13.5px; display: block; overflow-x: auto; }
+  #docs-body th, #docs-body td { border: 1px solid var(--border); padding: 4px 10px; text-align: left; vertical-align: top; }
+  #docs-body a { color: var(--accent); }
   #gutter {
     flex: none;
     width: 3.4em;
@@ -163,7 +206,9 @@
   @media (max-width: 860px) {
     header { padding: 12px 16px; }
     main { grid-template-columns: 1fr; grid-template-rows: 62vh auto; }
-    .editor-pane { border-right: 0; border-bottom: 1px solid var(--border); }
+    #splitter { display: none; }
+    .editor-pane { border-bottom: 1px solid var(--border); }
+    #docs-body { padding: 4px 16px 20px; }
     .results-pane { padding: 16px; }
     details.syntax td:first-child { white-space: normal; }
   }
@@ -181,8 +226,19 @@
     </select>
     <button id="check" class="primary" type="button" title="Ctrl/⌘ + Enter">Check</button>
     <span id="status" role="status"></span>
+    <button class="docs" type="button" data-doc="README">README</button>
+    <button class="docs" type="button" data-doc="GRAMMAR">Grammar</button>
   </div>
 </header>
+<dialog id="docs" aria-label="Documentation">
+  <div class="docs-bar">
+    <button type="button" data-doc="README" aria-pressed="false">README</button>
+    <button type="button" data-doc="GRAMMAR" aria-pressed="false">Grammar</button>
+    <span class="spacer"></span>
+    <button type="button" id="docs-close">Close</button>
+  </div>
+  <div id="docs-body"></div>
+</dialog>
 <main>
   <section class="editor-pane" aria-label="Program">
     <div id="gutter" aria-hidden="true"></div>
@@ -191,6 +247,7 @@
       <textarea id="editor" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" aria-label="Program source"></textarea>
     </div>
   </section>
+  <div id="splitter" role="separator" aria-orientation="vertical" aria-valuemin="15" aria-valuemax="85" aria-label="Resize the panes" tabindex="0"></div>
   <section class="results-pane" aria-label="Result">
     <div id="results"></div>
     <details class="syntax">
@@ -370,6 +427,135 @@
     const example = examples.find((x) => x.name === picker.value);
     if (example) use(example);
   });
+
+  // The splitter between the two panes: the editor takes the ratio `split` of the width.
+  const main = document.querySelector("main"), splitter = $("splitter"), SPLIT = STORE + "-split";
+  let split = 0.6;
+  try { split = parseFloat(localStorage.getItem(SPLIT)) || split; } catch (e) {}
+
+  function setSplit(r, persist = true) {
+    split = Math.min(0.85, Math.max(0.15, r));
+    main.style.setProperty("--cols", `minmax(0, ${split}fr) 8px minmax(0, ${1 - split}fr)`);
+    splitter.setAttribute("aria-valuenow", Math.round(split * 100));
+    if (persist) try { localStorage.setItem(SPLIT, split); } catch (e) {}
+  }
+
+  splitter.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    splitter.setPointerCapture(e.pointerId);
+    splitter.classList.add("dragging");
+    document.body.classList.add("dragging");
+  });
+  splitter.addEventListener("pointermove", (e) => {
+    if (!splitter.hasPointerCapture(e.pointerId)) return;
+    const box = main.getBoundingClientRect();
+    setSplit((e.clientX - box.left - 4) / (box.width - 8), false);
+  });
+  const drop = (e) => {
+    if (!splitter.hasPointerCapture(e.pointerId)) return;
+    splitter.releasePointerCapture(e.pointerId);
+    splitter.classList.remove("dragging");
+    document.body.classList.remove("dragging");
+    setSplit(split);
+  };
+  splitter.addEventListener("pointerup", drop);
+  splitter.addEventListener("pointercancel", drop);
+  splitter.addEventListener("dblclick", () => setSplit(0.6));
+  splitter.addEventListener("keydown", (e) => {
+    const step = e.shiftKey ? 0.1 : 0.02;
+    if (e.key === "ArrowLeft") { e.preventDefault(); setSplit(split - step); }
+    else if (e.key === "ArrowRight") { e.preventDefault(); setSplit(split + step); }
+  });
+  setSplit(split, false);
+
+  // The documentation: README.md and GRAMMAR.md, rendered by a small Markdown reader
+  // that knows what these two files use.
+  const REPO = "https://github.com/castagnag/elixir-process-types/blob/HEAD/";
+
+  function inline(text) {
+    const spans = [];
+    const held = text.replace(/`([^`]+)`/g, (m, c) => `\u0000${spans.push(`<code>${esc(c)}</code>`) - 1}\u0000`);
+    return esc(held)
+      .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, label, href) =>
+        `<a href="${/^[a-z]+:/.test(href) ? href : REPO + href}" target="_blank" rel="noopener">${label}</a>`)
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/(^|[^*\w])\*([^*\s][^*]*)\*(?!\w)/g, "$1<em>$2</em>")
+      .replace(/\u0000(\d+)\u0000/g, (m, n) => spans[n]);
+  }
+
+  const ITEM = /^(\s*)([-*]|\d+\.)\s+(.*)$/;
+  const indentOf = (line) => line.length - line.trimStart().length;
+
+  function blocks(lines) {
+    let html = "", i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      let m;
+      if (!line.trim()) { i++; continue; }
+      if (line.trimStart().startsWith("```")) {
+        const body = [];
+        for (i++; i < lines.length && !lines[i].trimStart().startsWith("```"); i++) body.push(lines[i]);
+        i++;
+        html += `<pre><code>${esc(body.join("\n"))}</code></pre>`;
+      } else if ((m = /^(#{1,6})\s+(.*)$/.exec(line))) {
+        html += `<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`;
+        i++;
+      } else if (line.startsWith("|") && /^\|[\s:|-]+\|?\s*$/.test(lines[i + 1] || "")) {
+        const cells = (l) => l.trim().replace(/^\||\|$/g, "").split("|").map((c) => inline(c.trim()));
+        html += "<table><thead><tr>" + cells(line).map((c) => `<th>${c}</th>`).join("") + "</tr></thead><tbody>";
+        for (i += 2; i < lines.length && lines[i].startsWith("|"); i++)
+          html += "<tr>" + cells(lines[i]).map((c) => `<td>${c}</td>`).join("") + "</tr>";
+        html += "</tbody></table>";
+      } else if ((m = ITEM.exec(line))) {
+        const base = m[1].length, tag = /\d/.test(m[2]) ? "ol" : "ul";
+        const items = [];
+        while (i < lines.length) {
+          const item = ITEM.exec(lines[i]);
+          if (!item || item[1].length !== base) break;
+          const body = [item[3]];
+          i++;
+          // the item goes on while the lines are indented deeper (or blank, then indented)
+          while (i < lines.length) {
+            const next = lines[i];
+            if (next.trim() ? indentOf(next) > base : (i + 1 < lines.length && lines[i + 1].trim() && indentOf(lines[i + 1]) > base)) {
+              body.push(next.trim() ? next.slice(Math.min(indentOf(next), base + 2)) : "");
+              i++;
+            } else break;
+          }
+          items.push(body);
+        }
+        html += `<${tag}>` + items.map((b) => `<li>${blocks(b)}</li>`).join("") + `</${tag}>`;
+      } else {
+        const para = [];
+        while (i < lines.length && lines[i].trim() && !lines[i].trimStart().startsWith("```") &&
+               !/^#{1,6}\s/.test(lines[i]) && !ITEM.test(lines[i]) && !lines[i].startsWith("|")) para.push(lines[i++].trim());
+        if (!para.length) para.push(lines[i++].trim());
+        html += `<p>${inline(para.join(" "))}</p>`;
+      }
+    }
+    return html;
+  }
+
+  const dialog = $("docs"), docsBody = $("docs-body");
+  let docs = null;
+
+  async function showDoc(name) {
+    if (!dialog.open) dialog.showModal();
+    for (const b of dialog.querySelectorAll(".docs-bar [data-doc]"))
+      b.setAttribute("aria-pressed", String(b.dataset.doc === name));
+    if (!docs) {
+      docsBody.textContent = "loading…";
+      try { docs = await (await fetch(API + "/docs")).json(); }
+      catch (e) { docsBody.textContent = "the server does not answer"; return; }
+    }
+    const doc = docs.find((d) => d.name === name);
+    docsBody.innerHTML = doc ? blocks(doc.source.split("\n")) : "";
+    docsBody.scrollTop = 0;
+  }
+
+  for (const b of document.querySelectorAll("[data-doc]")) b.addEventListener("click", () => showDoc(b.dataset.doc));
+  $("docs-close").addEventListener("click", () => dialog.close());
+  dialog.addEventListener("click", (e) => { if (e.target === dialog) dialog.close(); });
 
   (async () => {
     try {

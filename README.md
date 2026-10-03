@@ -47,8 +47,9 @@ mix playground --port 4100
 
 The playground is a page where a program is checked as it is written. The examples
 can be loaded from a menu, or directly with `?example=name` (e.g.
-`http://localhost:4000/?example=dispatcher_errors`), and each error links to its line.
-The server listens on localhost only. Its API (`GET /examples`, `POST /check` with
+`http://localhost:4000/?example=dispatcher_errors`), and each error links to its line. The border between the two panes can be dragged
+(or moved with the arrow keys), and the README and the grammar open from the header.
+The server listens on localhost only. Its API (`GET /examples`, `GET /docs`, `POST /check` with
 `{"source": ...}`) answers with CORS headers, so that the page can also be served
 statically, with `window.PLAYGROUND_API` set to the address of the server. Before
 exposing the server publicly, note that every program creates atoms (its identifiers

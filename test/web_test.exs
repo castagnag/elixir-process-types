@@ -28,6 +28,14 @@ defmodule ProcessTypes.WebTest do
     assert "mixing_write" in Enum.map(examples, & &1["name"])
   end
 
+  test "the documentation" do
+    conn = call(:get, "/docs")
+    assert conn.status == 200
+    docs = JSON.decode!(conn.resp_body)
+    assert Enum.map(docs, & &1["name"]) == ["README", "GRAMMAR"]
+    assert Enum.all?(docs, &(&1["source"] != ""))
+  end
+
   test "an accepted program" do
     conn = call(:post, "/check", %{source: "$self_interface :a\nsend(self(), :a)\n"})
     assert conn.status == 200

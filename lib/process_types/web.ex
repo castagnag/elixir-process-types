@@ -4,6 +4,7 @@ defmodule ProcessTypes.Web do
 
       GET  /          the page
       GET  /examples  the programs of examples/, as [{"name", "source"}]
+      GET  /docs      README.md and GRAMMAR.md, as [{"name", "source"}]
       POST /check     {"source": ..., "mode": "infer" | "ground"}, answered by {"ok",
                       "diagnostics", "functions", "main"} or {"error"}; the mode is
                       inference by default (GRAMMAR.md, §9)
@@ -15,7 +16,8 @@ defmodule ProcessTypes.Web do
 
   use Plug.Router
 
-  @examples Path.expand("../../examples", __DIR__)
+  @root Path.expand("../..", __DIR__)
+  @examples Path.join(@root, "examples")
   @timeout 10_000
 
   plug :cors
@@ -31,6 +33,10 @@ defmodule ProcessTypes.Web do
 
   get "/examples" do
     json(conn, 200, examples())
+  end
+
+  get "/docs" do
+    json(conn, 200, docs())
   end
 
   post "/check" do
@@ -89,6 +95,12 @@ defmodule ProcessTypes.Web do
     |> Path.wildcard()
     |> Enum.sort_by(&{not String.ends_with?(&1, "/dispatcher.exs"), &1})
     |> Enum.map(&%{name: Path.basename(&1, ".exs"), source: File.read!(&1)})
+  end
+
+  defp docs do
+    for {name, file} <- [{"README", "README.md"}, {"GRAMMAR", "GRAMMAR.md"}] do
+      %{name: name, source: File.read!(Path.join(@root, file))}
+    end
   end
 
   defp cors(conn, _opts) do
