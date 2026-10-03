@@ -155,6 +155,7 @@ defmodule ProcessTypes.TypeSyntax do
     do: Types.intersection(descr(a, defs, scope, seen), descr(b, defs, scope, seen))
 
   defp descr({:not, a}, defs, scope, seen), do: Types.negation(descr(a, defs, scope, seen))
+  defp descr({:raw, _}, _, _, _), do: bad("this type has no source form")
 
   defp descr({:name, _, _} = name, defs, scope, seen) do
     {key, body, scope} = resolve(name, defs, scope, seen)

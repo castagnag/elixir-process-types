@@ -57,10 +57,12 @@ compiler, so the version is pinned in `mix.exs`.
 
 ## Printing types
 
-Types in messages are read back from Descr into the syntax of annotations. Two
-limits: type names are not recovered, so a defined type such as `worker` is printed
-expanded; and Descr's printer drops negated arrows and pid types, so a type such as
-`fun() and not (integer() -> integer())` is printed as `fun()`. Neither affects
+Types in messages are read back from Descr into the syntax of annotations, with the
+names that `$type` defines: a subterm that denotes the same type as a name is printed
+as the name (`Server.worker` outside the module `Server`), and so is, in a union, a
+group of disjuncts whose union the name denotes. Singleton types are never renamed.
+One limit: Descr's printer drops negated arrows and pid types, so a type such as
+`fun() and not (integer() -> integer())` is printed as `fun()`. This does not affect
 checking.
 
 ## Layout
@@ -69,6 +71,7 @@ checking.
 |---|---|
 | `ProcessTypes.Types` | the encoding into Descr, the only module that calls it |
 | `ProcessTypes.TypeSyntax` | annotation types: parsing, names, meaning, printing |
+| `ProcessTypes.Printer` | printing types with the names that `$type` defines |
 | `ProcessTypes.Annotations` | extraction of the annotation lines |
 | `ProcessTypes.Frontend` | from Elixir code to the core syntax of the checker |
 | `ProcessTypes.Checker` | the typing rules |

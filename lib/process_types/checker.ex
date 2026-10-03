@@ -14,22 +14,34 @@ defmodule ProcessTypes.Checker do
   counted for exhaustiveness. Both approximations are sound.
   """
 
-  alias ProcessTypes.{Diagnostic, TypeSyntax, Types}
+  alias ProcessTypes.{Diagnostic, Printer, TypeSyntax, Types}
   alias ProcessTypes.Frontend.Program
 
   defmodule Result do
     @moduledoc """
     The outcome of a check: the diagnostics, the annotated functions as
-    `{name, annotation}` strings, and the type of the main process body (or `nil`).
+    `{name, annotation}` strings, the type of the main process body (or `nil`), and
+    the type names visible at the top level, for printing (`ProcessTypes.Printer`).
     """
-    defstruct diagnostics: [], functions: [], main: nil
+    defstruct diagnostics: [], functions: [], main: nil, names: []
   end
 
   @doc "Checks a program; the backend defaults to `ProcessTypes.Backend.Ground`."
   def check(%Program{} = program, backend \\ ProcessTypes.Backend.Ground) do
     st = %{diags: []}
     {sigs, st} = signatures(program, st)
-    ctx = %{backend: backend, program: program, sigs: sigs, module: nil, env: %{}, o: nil, i: nil}
+    names = Map.new([nil | program.modules], &{&1, Printer.names(program.types, &1)})
+
+    ctx = %{
+      backend: backend,
+      program: program,
+      sigs: sigs,
+      names: names,
+      module: nil,
+      env: %{},
+      o: nil,
+      i: nil
+    }
 
     st =
       program.funs
@@ -55,7 +67,12 @@ defmodule ProcessTypes.Checker do
         {fun_name(fun.module, fun.name, fun.arity), TypeSyntax.to_string(elem(fun.annotation, 0))}
       end
 
-    %Result{diagnostics: Enum.reverse(st.diags), functions: functions, main: main}
+    %Result{
+      diagnostics: Enum.reverse(st.diags),
+      functions: functions,
+      main: main,
+      names: Map.fetch!(names, nil)
+    }
   end
 
   # The signature of each function: the arrows of its annotation and their
@@ -146,7 +163,7 @@ defmodule ProcessTypes.Checker do
                 ctx.backend.require_subtype(st, u, bound, fn ->
                   Diagnostic.error(
                     meta[:line],
-                    "#{what}: this clause returns #{show(u)}, which is not a subtype of #{show(bound)}"
+                    "#{what}: this clause returns #{show(ctx, u)}, which is not a subtype of #{show(ctx, bound)}"
                   )
                 end)
             end
@@ -162,7 +179,10 @@ defmodule ProcessTypes.Checker do
 
         {line, what} ->
           ctx.backend.require_subtype(st, t, covered, fn ->
-            Diagnostic.error(line, "#{what} do not cover #{show(Types.difference(t, covered))}")
+            Diagnostic.error(
+              line,
+              "#{what} do not cover #{show(ctx, Types.difference(t, covered))}"
+            )
           end)
       end
 
@@ -226,7 +246,7 @@ defmodule ProcessTypes.Checker do
             ctx.backend.require_subtype(st, u, lower(p), fn ->
               Diagnostic.error(
                 meta[:line],
-                "this match may fail: #{show(Types.difference(u, lower(p)))} does not match the pattern"
+                "this match may fail: #{show(ctx, Types.difference(u, lower(p)))} does not match the pattern"
               )
             end)
 
@@ -429,7 +449,7 @@ defmodule ProcessTypes.Checker do
           error(
             st,
             meta[:line],
-            "send: the target has type #{show(p)}, which is not a process type"
+            "send: the target has type #{show(ctx, p)}, which is not a process type"
           )
 
     {m, st} = synth(ctx, st, message, if(process?, do: Types.interface(p)))
@@ -439,7 +459,7 @@ defmodule ProcessTypes.Checker do
         ctx.backend.require_subtype(st, p, Types.pid(m), fn ->
           Diagnostic.error(
             meta[:line],
-            "send: the target accepts #{show(Types.interface(p))}, not #{show(m)}"
+            "send: the target accepts #{show(ctx, Types.interface(p))}, not #{show(ctx, m)}"
           )
         end)
       else
@@ -466,7 +486,7 @@ defmodule ProcessTypes.Checker do
             ctx.backend.apply(st, f, Types.tuple([]), s, s, fn _ ->
               Diagnostic.error(
                 meta[:line],
-                "spawn: a function of type #{show(f)} cannot run in a process of interface #{show(s)}"
+                "spawn: a function of type #{show(ctx, f)} cannot run in a process of interface #{show(ctx, s)}"
               )
             end)
 
@@ -505,22 +525,23 @@ defmodule ProcessTypes.Checker do
     s = if n == 1, do: hd(types), else: Types.tuple(types)
 
     ctx.backend.apply(st, f, s, ctx.o, ctx.i, fn reason ->
-      Diagnostic.error(meta[:line], application_error(reason, name, f, s, ctx.o, ctx.i))
+      Diagnostic.error(meta[:line], application_error(ctx, reason, name, f, s))
     end)
   end
 
-  defp application_error(:badfun, name, f, _s, _o, _i),
-    do: "#{name} is not a function: it has type #{show(f)}"
+  defp application_error(ctx, :badfun, name, f, _s),
+    do: "#{name} is not a function: it has type #{show(ctx, f)}"
 
-  defp application_error(:badarg, name, f, s, o, i) do
+  defp application_error(ctx, :badarg, name, f, s) do
     # At the bracket [term(), none()] every arrow can be called.
     case Types.apply(f, s, Types.term(), Types.none()) do
       {:ok, _} ->
-        "#{name} cannot be applied to #{show(s)} at the bracket [#{show(o)}, #{show(i)}]: its type is #{show(f)}, " <>
+        "#{name} cannot be applied to #{show(ctx, s)} at the bracket " <>
+          "[#{show(ctx, ctx.o)}, #{show(ctx, ctx.i)}]: its type is #{show(ctx, f)}, " <>
           "and an arrow (s -> t)@[o', i'] can be called at [o, i] only if o' ≤ o and i ≤ i'"
 
       _ ->
-        "#{name} cannot be applied to #{show(s)}: its type is #{show(f)}"
+        "#{name} cannot be applied to #{show(ctx, s)}: its type is #{show(ctx, f)}"
     end
   end
 
@@ -528,7 +549,7 @@ defmodule ProcessTypes.Checker do
 
   defp require_integer(ctx, st, t, meta, what) do
     ctx.backend.require_subtype(st, t, Types.integer(), fn ->
-      Diagnostic.error(meta[:line], "#{what} has type #{show(t)}, not integer()")
+      Diagnostic.error(meta[:line], "#{what} has type #{show(ctx, t)}, not integer()")
     end)
   end
 
@@ -543,7 +564,8 @@ defmodule ProcessTypes.Checker do
 
   defp error(st, line, message), do: %{st | diags: [Diagnostic.error(line, message) | st.diags]}
 
-  defp show(t), do: Types.to_string(t)
+  # Types in messages are printed with the names visible in the current module.
+  defp show(ctx, t), do: Printer.to_string(t, Map.get(ctx.names, ctx.module, []))
   defp arrow_string(arrow), do: TypeSyntax.to_string(arrow.source)
 
   defp fun_name(nil, f, n), do: "#{f}/#{n}"

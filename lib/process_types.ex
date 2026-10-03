@@ -33,7 +33,7 @@ defmodule ProcessTypes do
 
         main =
           if result.main,
-            do: ["  main process : #{ProcessTypes.Types.to_string(result.main)}"],
+            do: ["  main process : #{ProcessTypes.Printer.to_string(result.main, result.names)}"],
             else: []
 
         Enum.join(["#{file}: ok" | functions ++ main], "\n")
