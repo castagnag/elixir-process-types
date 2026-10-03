@@ -122,7 +122,7 @@ defmodule ProcessTypes.InferTest do
 
   # Cases that the copied Descr cannot solve yet (lib/vendor/README.md).
   describe "pending on Descr" do
-    @tag skip: "tallying does not terminate on a recursive solution through decorations"
+    @tag skip: "tallying does not terminate when the job's decorations are variables"
     test "the jobs of Section 2, with an undecorated job" do
       source = """
       $type job = (-> term())
@@ -154,7 +154,6 @@ defmodule ProcessTypes.InferTest do
              """) == []
     end
 
-    @tag skip: "validating the solution loses the assumptions in function emptiness"
     test "a type recursive through written decorations, with inferred brackets" do
       assert lines("""
              $type worker = :bump or {:run, (-> term())@[:bump, worker]}

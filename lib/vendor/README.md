@@ -60,20 +60,30 @@ applies the patches of `scripts/descr_patches/`, in order:
    comparing two copies of a recursive type with a variable (k = {k} or x) does not
    terminate, nor does the validation of recursive solutions of tallying.
 
-Patches 02 to 05 address limits of the branch that its own tests do not exercise; they
-are the fixes of a report for Guillaume Duboc, which also describes the limits below.
+6. `06-lazy-substitution.patch`, **provisional**, to be replaced by Guillaume Duboc's
+   fix when there is one: below a constructor, structural substitution substitutes
+   lazily, in a node of its own, an element where it would combine a recursive node with
+   other types; copies and lazy nodes are named after the substitution, so that the same
+   unfolding gives the same nodes; structural substitution does not simplify; and the
+   polymorphic leaves that connectives store when they unfold a node are exposed, also
+   in emptiness checks. Without it, tallying does not terminate on {x ∨ :b} ≤ x, nor on
+   the validation of the recursive worker of limit 3 below.
+
+Patches 02 to 06 address limits of the branch that its own tests do not exercise; they
+were reported to Guillaume Duboc, with the limits below.
 
 Only `ProcessTypes.Types` calls these modules.
 
 ## Limits found while using the branch (2026-10-03)
 
-Three cases that inference meets and that the copied Descr, with the patches above, does
-not handle; the corresponding tests of `test/infer_test.exs` are skipped. Run them, if at
+Three cases that inference met; the first two are not handled by the copied Descr, with
+the patches above, and the corresponding tests of `test/infer_test.exs` are skipped. Run them, if at
 all, under a memory limit: some of these loops allocate gigabytes in seconds. In the
 reproducers, `D` is `ProcessTypes.Descr`, and `arrow(s, o, i, t)` is the encoding of
 `ProcessTypes.Types`, `D.fun([D.union(s, D.port()), D.fun([o], D.port()), D.fun([], i)], t)`.
 
-1. **Recursive solutions through a function type.** Tallying does not terminate on
+1. **Recursive solutions through a function type.** With patch 06, tallying solves
+   {x ∨ :b} ≤ x and the two-constraint system of the jobs of Section 2,
 
    ```elixir
    [oa, ia, i, res] = Enum.map([:oa, :ia, :i, :res], &D.var/1)
@@ -82,18 +92,11 @@ reproducers, `D` is `ProcessTypes.Descr`, and `arrow(s, o, i, t)` is the encodin
    D.tally([{j, arrow(D.tuple([]), D.none(), i, res)}, {w, i}])
    ```
 
-   whose solutions need ia ≥ i ≥ w(ia), a recursive type. `solve_recursive_equation`
-   builds the solution as a node whose generator substitutes the variable by the node
-   itself; substitution computes connectives with the replacement, which unfold it, so
-   when the variable occurs in a Boolean combination inside a constructor (here
-   `(i and not ia) or ia`, in the read capability) the unfolding never ends. The
-   smallest reproducer is `D.tally([{D.tuple([D.union(x, D.atom([:b]))]), x}])`, that
-   is, {x ∨ :b} ≤ x. Each constraint above alone is solved at once.
-   `scripts/descr_patches/experimental/` holds an attempt (lazy substitution of
-   components): it makes the node of a single equation such as x = {x or :b} or :a well
-   defined, but tallying still does not terminate, on this reproducer as on the smallest
-   one, also with patches 04 and 05. This is what the jobs of Section 2 need when `job`
-   is written `(-> term())`.
+   but not the constraints of the whole program (`job = (-> term())`). Six of them
+   suffice: `o_spawn ≤ w`, `w ≤ i_spawn`, `i_spawn ∧ {:run, term()} ≤ {p1, p2}`,
+   `o_app ≤ o_spawn`, `i_spawn ≤ i_app`, `p2 ≤ arrow({}, o_app, i_app, res)`, with `w`
+   as above. They do not finish in 120 s, although only 8 distinct nodes are unfolded:
+   emptiness checks seem to produce ever new diagrams (not verified).
 
 2. **Intersection of a recursive tuple type.** With `l = nil or {integer(), l}`,
    `D.intersection(l, l)` does not terminate, nor does the intersection of two copies
@@ -103,14 +106,7 @@ reproducers, `D` is `ProcessTypes.Descr`, and `arrow(s, o, i, t)` is the encodin
    `D.bare_intersection` terminate. Since tallying intersects bounds,
    `D.tally([{l1, a}, {a, l2}])` does not terminate either.
 
-3. **A written recursive type under inferred brackets.** For
-   `worker = :bump or {:run, (-> term())@[:bump, worker]}`, a spawned process of
-   interface `worker` that runs the jobs it receives generates twelve constraints
-   (`ProcessTypes.check_string(source, solve: false).constraints` on the skipped test of
-   `test/infer_test.exs`). Tallying finds the expected solution at once
-   (`i_app = i_spawn = worker`), but validating it does not terminate: the fast paths of
-   `phi_starter/4` compute an application (`apply_disjoint`, `fun_apply_static`,
-   `aux_apply`, and `disjoint?` in `all_disjoint_arguments?`) with checks that start
-   without the coinductive assumptions. With patches 04 and 05, skipping these fast
-   paths inside emptiness checks, and using the connectives of patch 05 in `phi/5`,
-   makes the test pass; this is an experiment, not applied here.
+3. **A written recursive type under inferred brackets** (solved by patch 06). For
+   `worker = :bump or {:run, (-> term())@[:bump, worker]}`, tallying found the expected
+   solution but validating it compared copies of recursive types that the substitution
+   had named differently, and did not terminate.
