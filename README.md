@@ -17,7 +17,10 @@ that each reports errors exactly on the lines marked `# error:`.
 
 ## Usage
 
+In a fresh clone, fetch the dependencies first (they are not in git):
+
 ```
+mix deps.get
 mix typecheck examples/dispatcher.exs examples/dispatcher_errors.exs
 mix test
 ```
