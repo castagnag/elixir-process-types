@@ -5,9 +5,9 @@ defmodule ProcessTypes.MixProject do
     [
       app: :process_types,
       version: "0.1.0",
-      # Types are built with Module.Types.Descr, a private compiler API that
-      # changes between minor versions: stay on 1.20.x until we move to a
-      # branch with type variables and tallying.
+      # Types are built with ProcessTypes.Descr, the copy in lib/vendor/ of the type
+      # representation of the compiler from Guillaume Duboc's branch with type
+      # variables, tallying and recursive types; it is compiled with the project.
       elixir: "~> 1.20.4",
       start_permanent: Mix.env() == :prod,
       deps: deps()

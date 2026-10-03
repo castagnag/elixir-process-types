@@ -3,14 +3,10 @@
 # Expected: accepted.
 
 defmodule Server do
-  # A job may send job_writes to the process that runs it, and read job_reads there.
-  # The paper infers job_reads to be worker, which mentions job: a recursive type,
-  # not available yet. Any supertype of worker will do, so {:run, fun()} replaces
-  # {:run, job}.
+  # A job may send job_writes to the process that runs it, and read there the messages
+  # of worker, as the paper infers: job and worker are defined by mutual recursion.
   $type job_writes = :bump or {:work_add, integer()}
-  $type job_reads  = :bump or {:work_add, integer()} or {:total, pid({:total, integer()})}
-                     or {:run, fun()}
-  $type job        = (-> term())@[job_writes, job_reads]
+  $type job        = (-> term())@[job_writes, worker]
   $type worker     = :bump or {:work_add, integer()} or {:total, pid({:total, integer()})}
                      or {:run, job}
 

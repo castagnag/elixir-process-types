@@ -36,16 +36,32 @@ defmodule ProcessTypes.PrinterTest do
     assert show(Types.atom([:stop])) == ":stop"
   end
 
+  test "a recursive type equal to a name is printed as the name" do
+    # $type list = nil or {integer(), list}
+    defs =
+      Map.put(@defs, {nil, :list}, {
+        {:or, {:atom, nil}, {:tuple, [:integer, {:name, nil, :list}]}},
+        4
+      })
+
+    {:ok, list} = ProcessTypes.TypeSyntax.to_descr({:name, nil, :list}, defs, nil)
+    names = Printer.names(defs, nil)
+    assert Printer.to_string(list, names) == "list"
+    assert Printer.to_string(Types.tuple([Types.integer(), list]), names) == "{integer(), list}"
+    assert Printer.to_string(list) == "rec list. nil or {integer(), list}"
+  end
+
   test "decorations are printed with names" do
     arrow = Types.arrow(Types.tuple([]), w(), Types.term(), Types.atom([:a]))
     assert show(arrow) == "(-> :a)@[w, term()]"
   end
 
   test "the messages of Section 2 name the interfaces" do
-    result = ProcessTypes.check_file(Path.expand("../examples/dispatcher_errors.exs", __DIR__))
+    path = Path.expand("../examples/dispatcher_errors.exs", __DIR__)
+    result = ProcessTypes.check_file(path, mode: :ground)
     messages = Map.new(result.diagnostics, &{&1.line, &1.message})
-    assert messages[53] == "send: the target accepts Server.worker, not {:wrk_add, integer()}"
-    assert messages[55] == "send: the target accepts Server.job_writes, not :tick"
-    assert messages[56] == "the left operand of + has type Server.job_reads, not integer()"
+    assert messages[51] == "send: the target accepts Server.worker, not {:wrk_add, integer()}"
+    assert messages[53] == "send: the target accepts Server.job_writes, not :tick"
+    assert messages[54] == "the left operand of + has type Server.worker, not integer()"
   end
 end

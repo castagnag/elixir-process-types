@@ -1,11 +1,13 @@
 defmodule ProcessTypes.Types do
   @moduledoc """
-  The types of the paper, as `Module.Types.Descr` types.
+  The types of the paper, as `ProcessTypes.Descr` types.
 
-  This is the only module that calls `Module.Types.Descr`, the private type
-  representation of the Elixir compiler. The two type constructors that the paper
-  adds to those of Elixir are encoded with Descr's function types, whose arities are
-  disjoint:
+  This is the only module that calls `ProcessTypes.Descr`, a copy of the type
+  representation of the Elixir compiler, `Module.Types.Descr`, taken from Guillaume
+  Duboc's branch `type-variables` of https://github.com/gldubc/elixir: its type
+  variables, tallying and recursive types are Guillaume Duboc's work (see
+  `lib/vendor/README.md`). The two type constructors that the paper adds to those of
+  Elixir are encoded with Descr's function types, whose arities are disjoint:
 
   | paper          | Descr                                    |
   |----------------|------------------------------------------|
@@ -24,7 +26,7 @@ defmodule ProcessTypes.Types do
   printer drops negated arrows, which `to_string/1` therefore cannot show either.
   """
 
-  alias Module.Types.Descr, as: D
+  alias ProcessTypes.Descr, as: D
   alias ProcessTypes.TypeSyntax
 
   @type t :: term()
@@ -51,7 +53,20 @@ defmodule ProcessTypes.Types do
   defp read_cap(i), do: D.fun([], i)
 
   @doc "The decorated arrow `s ->_o^i t`, written `(s -> t)@[o, i]`."
-  def arrow(s, o, i, t), do: D.fun([D.union(s, mho()), pid(o), read_cap(i)], t)
+  def arrow(s, o, i, t), do: pointed_arrow(pointed(s), o, i, t)
+
+  @doc """
+  The pointed domain `s or ℧` of an arrow whose domain is `s` (Section 4.1 of the
+  paper): the value component of the input of an arrow, never empty.
+  """
+  def pointed(s), do: D.union(s, mho())
+
+  @doc """
+  The arrow `s ->_o^i t`, given its pointed domain `ps`, that is, `pointed(s)`. Inside
+  the equations of a recursive type, where `pointed/1` cannot be applied to a node of
+  the same system (`recursive/1`), the pointed domain is an equation of its own.
+  """
+  def pointed_arrow(ps, o, i, t), do: D.fun([ps, pid(o), read_cap(i)], t)
 
   @doc "The top function type `fun()`, that is, the arrow `none() ->_term()^none() term()`."
   def fun, do: arrow(none(), term(), none(), term())
@@ -67,6 +82,60 @@ defmodule ProcessTypes.Types do
   defdelegate empty?(t), to: D
 
   def union_all(types), do: Enum.reduce(types, none(), &union(&2, &1))
+
+  # Type variables and tallying (Section 8 of the paper)
+
+  @doc """
+  A fresh type variable. `name` only serves for printing: two calls with the same name
+  give two distinct variables.
+  """
+  defdelegate var(name), to: D
+
+  @doc "The variables that occur in `t` (those that matter: `t` depends on them)."
+  defdelegate vars(t), to: D
+
+  @doc "Whether `t` contains no type variable."
+  def ground?(t), do: MapSet.size(D.vars(t)) == 0
+
+  @doc """
+  Applies a substitution, a map from variables to types, simultaneously: the images
+  are not substituted again.
+  """
+  defdelegate substitute(t, substitution), to: D
+
+  @doc """
+  Solves a list of constraints `{s, t}`, read s ≤ t, by tallying (Castagna et al.): the
+  result is a finite list of substitutions, each of which satisfies every constraint,
+  and of which every solution is an instance; `[]` when there is no solution.
+  """
+  def tally(constraints), do: D.tally(constraints)
+
+  # Recursive types
+
+  @doc """
+  The recursive types defined by `equations`, a map from keys to generators: each
+  generator receives `recur`, which maps a key to the node of its equation, and returns
+  the body of the equation. Returns the map from keys to nodes.
+
+  The constructors (`tuple/1`, `pid/1`, `pointed_arrow/4`) keep the nodes they are given
+  unevaluated, but the connectives evaluate them: in a generator, a connective may be
+  applied to the nodes of the system only through the `bare_*` connectives, and only at
+  the top of the body, never in an argument of a constructor. The equations must be
+  contractive (every cycle passes through a constructor), or evaluation loops.
+  """
+  defdelegate recursive(equations), to: D
+
+  @doc "Union without simplification, for the body of a recursive equation."
+  defdelegate bare_union(s, t), to: D
+
+  @doc "Intersection without simplification, for the body of a recursive equation."
+  defdelegate bare_intersection(s, t), to: D
+
+  @doc "Negation without simplification, for the body of a recursive equation."
+  defdelegate bare_negation(t), to: D
+
+  @doc "The pointed domain `s or ℧`, for the body of a recursive equation."
+  def bare_pointed(s), do: D.bare_union(s, mho())
 
   # Eliminations
 
@@ -84,7 +153,7 @@ defmodule ProcessTypes.Types do
         :badfun
 
       true ->
-        case D.fun_apply(f, [union(s, mho()), pid(o), read_cap(i)]) do
+        case fun_apply(f, [union(s, mho()), pid(o), read_cap(i)]) do
           {:ok, u} -> {:ok, u}
           {:badarg, _, _} -> :badarg
           _ -> :badfun
@@ -100,7 +169,7 @@ defmodule ProcessTypes.Types do
     if empty?(p) do
       term()
     else
-      case D.fun_apply(p, [term()]) do
+      case fun_apply(p, [term()]) do
         {:ok, _} -> term()
         {:badarg, [s], _} -> s
         _ -> none()
@@ -115,8 +184,8 @@ defmodule ProcessTypes.Types do
   def arrow_parts(t) do
     with false <- empty?(t),
          true <- subtype?(t, fun()),
-         {:badarg, [s1, w, r], _} <- D.fun_apply(t, [term(), term(), term()]),
-         {:ok, i} <- D.fun_apply(r, []),
+         {:badarg, [s1, w, r], _} <- fun_apply(t, [term(), term(), term()]),
+         {:ok, i} <- fun_apply(r, []),
          s = difference(s1, mho()),
          o = interface(w),
          {:ok, u} <- apply(t, s, o, i),
@@ -135,7 +204,7 @@ defmodule ProcessTypes.Types do
     if empty?(f) or not subtype?(f, fun()) do
       none()
     else
-      case D.fun_apply(f, [term(), term(), term()]) do
+      case fun_apply(f, [term(), term(), term()]) do
         {:badarg, [s1 | _], _} -> difference(s1, mho())
         {:ok, _} -> term()
         _ -> none()
@@ -154,10 +223,21 @@ defmodule ProcessTypes.Types do
     if empty?(t) do
       none()
     else
-      case D.tuple_fetch(t, k) do
+      case D.tuple_fetch(unfold(t), k) do
         {_optional?, c} -> c
         _ -> none()
       end
+    end
+  end
+
+  # Descr's eliminators do not take a recursive node: unfold it first, once is enough
+  # for the equations of ProcessTypes.TypeGraph, whose bodies are never bare nodes.
+  defp fun_apply(f, args), do: D.fun_apply(unfold(f), args)
+
+  defp unfold(t) do
+    case D.to_descr(t) do
+      ^t -> t
+      u -> unfold(u)
     end
   end
 
@@ -166,42 +246,74 @@ defmodule ProcessTypes.Types do
   @doc "The type in the syntax of annotations (GRAMMAR.md, §5)."
   def to_string(t), do: t |> to_syntax() |> TypeSyntax.to_string()
 
-  @doc "Reads Descr's quoted form of `t` back as a source type (see `ProcessTypes.TypeSyntax`)."
-  def to_syntax(t), do: t |> D.to_quoted() |> back()
+  @doc """
+  Reads Descr's quoted form of `t` back as a source type (see `ProcessTypes.TypeSyntax`).
 
-  defp back({:__block__, _, [x]}), do: back(x)
-  defp back(a) when is_atom(a), do: {:atom, a}
-  defp back([{:->, _, [args, ret]}]), do: back_fun(args, ret)
-  defp back({:or, _, [a, b]}), do: {:or, back(a), back(b)}
-  defp back({:and, _, [a, b]}), do: {:and, back(a), back(b)}
-  defp back({:not, _, [a]}), do: {:not, back(a)}
-  defp back({:{}, _, [{:..., _, nil}]}), do: :tuple
+  A recursive type is read back as `{:rec, x, t}`. The point ℧ belongs to no type of
+  the language: like the junk of the readback of the paper (Appendix A), it is read
+  back as `none()`, and so disappears from unions.
+  """
+  def to_syntax(t), do: t |> D.to_quoted() |> back(MapSet.new())
 
-  defp back({:{}, _, elems} = q) do
+  defp back({:__block__, _, [x]}, b), do: back(x, b)
+  defp back({:rec, _, [{x, _, nil}, body]}, b), do: rec(x, back(body, MapSet.put(b, x)))
+
+  defp back({x, _, nil}, b) when is_atom(x),
+    do: if(MapSet.member?(b, x), do: {:recvar, x}, else: {:var, x})
+
+  defp back(a, _b) when is_atom(a), do: {:atom, a}
+  defp back([{:->, _, [args, ret]}], b), do: back_fun(args, ret, b)
+  defp back({:or, _, [l, r]}, b), do: or_syntax(back(l, b), back(r, b))
+  defp back({:and, _, [l, r]}, b), do: and_syntax(back(l, b), back(r, b))
+  defp back({:not, _, [a]}, b), do: not_syntax(back(a, b))
+  defp back({:{}, _, [{:..., _, nil}]}, _b), do: :tuple
+
+  defp back({:{}, _, elems} = q, b) do
     if Enum.any?(elems, &match?({:..., _, nil}, &1)),
       do: {:raw, q},
-      else: {:tuple, Enum.map(elems, &back/1)}
+      else: {:tuple, Enum.map(elems, &back(&1, b))}
   end
 
-  defp back({name, _, []}) when name in [:integer, :atom, :boolean, :term, :none], do: name
-  defp back(q), do: {:raw, q}
+  defp back({:port, _, []}, _b), do: :none
+  defp back({name, _, []}, _b) when name in [:integer, :atom, :boolean, :term, :none], do: name
+  defp back(q, _b), do: {:raw, q}
+
+  defp or_syntax(:none, t), do: t
+  defp or_syntax(t, :none), do: t
+  defp or_syntax(s, t), do: {:or, s, t}
+
+  defp and_syntax(:term, t), do: t
+  defp and_syntax(t, :term), do: t
+  defp and_syntax(s, t), do: {:and, s, t}
+
+  defp not_syntax(:none), do: :term
+  defp not_syntax(:term), do: :none
+  defp not_syntax(t), do: {:not, t}
+
+  # A binder that its body does not use is dropped.
+  defp rec(x, body), do: if(free?(body, x), do: {:rec, x, body}, else: body)
+
+  defp free?({:recvar, x}, x), do: true
+  defp free?({:rec, x, _}, x), do: false
+  defp free?(t, x) when is_tuple(t), do: t |> Tuple.to_list() |> Enum.any?(&free?(&1, x))
+  defp free?(ts, x) when is_list(ts), do: Enum.any?(ts, &free?(&1, x))
+  defp free?(_, _), do: false
 
   # A pid: (t -> ℧)
-  defp back_fun([arg], {:port, _, []}) do
-    case back(arg) do
+  defp back_fun([arg], {:port, _, []}, b) do
+    case back(arg, b) do
       :none -> {:pid, :none}
       t -> {:pid, t}
     end
   end
 
-  # An arrow: (s or ℧, pid(o), (-> i) -> t)
-  defp back_fun([s1, w, r], ret) do
-    with {:pid, o} <- back(w),
-         {:ok, i} <- back_read_cap(r) do
-      s = s1 |> flatten_or() |> Enum.reject(&match?({:port, _, []}, &1))
-
-      domain = if s == [], do: :none, else: s |> Enum.map(&back/1) |> Enum.reduce(&{:or, &2, &1})
-      ret = back(ret)
+  # An arrow: (s or ℧, pid(o), (-> i) -> t). The pointed domain reads back as s, since
+  # ℧ reads back as none().
+  defp back_fun([s1, w, r], ret, b) do
+    with {:pid, o} <- back(w, b),
+         {:ok, i} <- back_read_cap(r, b) do
+      domain = back(s1, b)
+      ret = back(ret, b)
 
       cond do
         domain == :none and o == :term and i == :none and ret == :term ->
@@ -222,12 +334,9 @@ defmodule ProcessTypes.Types do
     end
   end
 
-  defp back_fun(args, ret), do: {:raw, [{:->, [], [args, ret]}]}
+  defp back_fun(args, ret, _b), do: {:raw, [{:->, [], [args, ret]}]}
 
-  defp back_read_cap({:__block__, _, [x]}), do: back_read_cap(x)
-  defp back_read_cap([{:->, _, [[], i]}]), do: {:ok, back(i)}
-  defp back_read_cap(_), do: :error
-
-  defp flatten_or({:or, _, [a, b]}), do: flatten_or(a) ++ flatten_or(b)
-  defp flatten_or(q), do: [q]
+  defp back_read_cap({:__block__, _, [x]}, b), do: back_read_cap(x, b)
+  defp back_read_cap([{:->, _, [[], i]}], b), do: {:ok, back(i, b)}
+  defp back_read_cap(_, _b), do: :error
 end

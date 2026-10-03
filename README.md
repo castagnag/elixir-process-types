@@ -6,14 +6,21 @@ a process is typed `pid(t)`, where `t` is the type of the messages it accepts, a
 an arrow carries the mailbox decorations of the process that runs it, written
 `(s -> t)@[o, i]`. Programs are type-checked, never run.
 
-Decorations are written explicitly. Their inference (Section 8 of the paper) needs
-type variables and tallying, which the Elixir compiler does not provide yet.
+By default the decorations that annotations do not write are inferred, as in
+Section 8 of the paper: they get type variables, and the constraints that the rules
+generate are solved by tallying. In ground mode (`--ground`) an undecorated arrow is
+read as `@[none(), term()]` and every constraint is checked at once (GRAMMAR.md, §9).
 
-**Status:** work in progress. The checker implements Sections 3–6 on the language
-specified in [GRAMMAR.md](GRAMMAR.md), which also lists the deviations that Descr
-imposes (no integer singleton types, no recursive types). [examples/](examples/)
-holds the examples of Sections 2, 4.1 and 6.3 of the paper; the test suite checks
-that each reports errors exactly on the lines marked `# error:`.
+**Status:** work in progress. The checker implements Sections 3–6, and the inference of
+Section 8, on the language specified in [GRAMMAR.md](GRAMMAR.md), which also lists the
+deviation that Descr imposes (no integer singleton types); type definitions may be
+recursive. [examples/](examples/) holds the examples of Sections 2, 4.1 and 6.3 of the
+paper; the test suite checks that each reports errors exactly on the lines marked
+`# error:`, in both modes. Inference does not yet handle programs whose constraints
+need a recursive solution, such as the jobs of Section 2 with an undecorated job type,
+nor some undecorated annotations that mention recursive types: tallying in the copied
+Descr does not terminate on them (see [lib/vendor/README.md](lib/vendor/README.md);
+the corresponding tests are skipped).
 
 ## Usage
 
@@ -22,6 +29,8 @@ In a fresh clone, fetch the dependencies first (they are not in git):
 ```
 mix deps.get
 mix typecheck examples/dispatcher.exs examples/dispatcher_errors.exs
+mix typecheck --ground examples/dispatcher.exs     # every decoration known
+mix typecheck --trace examples/negate.exs          # the constraints given to tallying
 mix test
 ```
 
@@ -48,8 +57,10 @@ and literals), which the BEAM never collects: requests must then be limited.
 ## Requirements
 
 Elixir 1.20.x (developed with 1.20.4 on OTP 29). Types are built with
-`Module.Types.Descr`, the private and unstable type representation of the Elixir
-compiler, so the version is pinned in `mix.exs`.
+`ProcessTypes.Descr`, a copy in [lib/vendor/](lib/vendor/) of `Module.Types.Descr`, the
+type representation of the Elixir compiler, as extended by Guillaume Duboc with type
+variables, tallying and recursive types (see Acknowledgements). It is compiled with the
+project, and `scripts/vendor_descr.sh` refreshes it.
 
 ## Design
 
@@ -65,11 +76,26 @@ compiler, so the version is pinned in `mix.exs`.
   from the encoding of Section 4.3 of the paper (tagged pairs). The laws of the paper
   have been tested on it (arrow factorization, the pid laws, multi-shot reading, and
   the failure of the three mixing laws of Section 6.3), not proved.
-- **Checking.** The checker follows the algorithmic rules of Section 8.2.2 with every
-  decoration known: each constraint a rule emits is checked at once, and each fresh
-  variable takes its least solution (the result of an application by `fun_apply`, a
-  tuple projection by `tuple_fetch`). Inference will replace this backend by the
-  collection of the constraints followed by tallying.
+- **Checking.** The checker follows the algorithmic rules of Fig. `fig:inference`
+  (Section 8.2), and a backend decides what to do with what they emit
+  (`ProcessTypes.Backend`). In ground mode every decoration is known: each constraint
+  is checked at once, and each fresh variable takes its least solution (the result of
+  an application by `fun_apply`, a tuple projection by `tuple_fetch`). In inference
+  mode the annotations are decorated with type variables, once per occurrence and with
+  the same pair for equal arrow annotations (decorate(·) of Section 8.1, computed on the
+  graph of the annotation by partition refinement); the rules mint the fresh variables
+  of i-app, pe-tuple, i-abs and i-spawn; a constraint without variables is still
+  checked at once, and the others are solved together, at the end, by tallying.
+- **Errors in inference mode.** When the deferred constraints have no solution, the
+  errors are the constraints that make them unsatisfiable, in generation order: a binary
+  search finds the shortest prefix without solution, its last constraint is reported
+  and dropped, and the search goes on. Types in messages are instances of a solution
+  of the constraints before it, with the variables left mapped by their role (output
+  decorations to `none()`, input decorations to `term()`).
+- **Recursive types.** A `$type` definition may be recursive if it is contractive.
+  `ProcessTypes.TypeGraph` represents an annotation by the finite graph of its regular
+  tree and compiles each cycle into a system of recursive equations of Descr, one
+  constructor or connective per equation, since Descr evaluates connectives eagerly.
 - **Front end.** Annotation lines (`$`, `$type`, `$interface`, `$self_interface`) are
   extracted and replaced by blank lines; the rest is parsed by
   `Code.string_to_quoted/2`.
@@ -80,6 +106,8 @@ Types in messages are read back from Descr into the syntax of annotations, with 
 names that `$type` defines: a subterm that denotes the same type as a name is printed
 as the name (`Server.worker` outside the module `Server`), and so is, in a union, a
 group of disjuncts whose union the name denotes. Singleton types are never renamed.
+A recursive type that is not a name is printed `rec x. t`, x standing for the whole type
+in t.
 One limit: Descr's printer drops negated arrows and pid types, so a type such as
 `fun() and not (integer() -> integer())` is printed as `fun()`. This does not affect
 checking.
@@ -89,10 +117,23 @@ checking.
 | module | role |
 |---|---|
 | `ProcessTypes.Types` | the encoding into Descr, the only module that calls it |
-| `ProcessTypes.TypeSyntax` | annotation types: parsing, names, meaning, printing |
+| `ProcessTypes.TypeSyntax` | annotation types: parsing and printing |
+| `ProcessTypes.TypeGraph` | the meaning of annotations: recursive types, decorate(·) |
 | `ProcessTypes.Printer` | printing types with the names that `$type` defines |
 | `ProcessTypes.Annotations` | extraction of the annotation lines |
 | `ProcessTypes.Frontend` | from Elixir code to the core syntax of the checker |
 | `ProcessTypes.Checker` | the typing rules |
 | `ProcessTypes.Backend` | how the checker discharges constraints (`Ground`: at once) |
+| `ProcessTypes.Backend.Infer` | inference: variables, deferred constraints, tallying |
 | `ProcessTypes.Web` | the playground server; its page is `priv/playground/index.html` |
+| `ProcessTypes.Descr` | in `lib/vendor/`: the copied type representation (Acknowledgements) |
+
+## Acknowledgements
+
+The types of the prototype rest on the work of **Guillaume Duboc**. The files of
+[lib/vendor/](lib/vendor/) are copied from his branch `type-variables` of
+https://github.com/gldubc/elixir, which extends `Module.Types.Descr`, the type
+representation of the Elixir compiler (Apache-2.0), with recursive type descriptors and
+with type variables and tallying: the recursive types and the inference of Section 8
+are implemented on top of it. [lib/vendor/README.md](lib/vendor/README.md) records the
+commit and the changes made to the copy.

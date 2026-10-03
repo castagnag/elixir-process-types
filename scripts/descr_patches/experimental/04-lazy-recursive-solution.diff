@@ -1,0 +1,151 @@
+EXPERIMENTAL, NOT APPLIED (scripts/vendor_descr.sh applies only scripts/descr_patches/*.patch).
+
+Tallying builds a recursive solution as a node whose generator substitutes the variable
+by the node itself; the connectives of the substitution unfold the node, so a variable
+that occurs inside a constructor in a Boolean combination, such as (i and not ia) or ia,
+makes the unfolding descend forever. This patch substitutes such components lazily, in
+nodes named after the solution and the component, with structural connectives. It fixes
+single equations (x = {x or :b} or :a, x = W(x) with W a worker interface), but the
+two-constraint reproducer of lib/vendor/README.md still does not terminate: the copies
+that substitute_recursive_node makes rerun a substitution at every unfolding.
+
+--- a/lib/vendor/descr.ex
++++ b/lib/vendor/descr.ex
+@@ -395,6 +395,126 @@
+     substitute_normalized(descr, substitutions, false)
+   end
+ 
++  @doc false
++  # Substitutes the recursion variable of a tallying equation by the node of its
++  # solution, from the generator of that node. A substitution computes connectives with
++  # the replacement, which unfold it, so substituting at once would unfold the node of
++  # the solution while its body is being built, and never end. Instead, every
++  # constructor component that mentions the variable is substituted lazily, in a node
++  # of its own; the node is named after the solution and the component, so that every
++  # unfolding builds the same nodes and coinductive checks terminate.
++  def __tally_substitute_lazy__(descr, variable, {_, _, _} = node) do
++    {:ok, identity} = variable_identity(variable)
++    lazy_substitute(descr, identity, node)
++  end
++
++  defp lazy_substitute(:term, _identity, _node), do: :term
++
++  defp lazy_substitute({:type_variables, bdd}, identity, node) do
++    bdd
++    |> Poly.substitute(
++      %{identity => node},
++      fn descr, _substitutions -> lazy_substitute(descr, identity, node) end,
++      &polymorphic_bdd/1,
++      &structural_union/2,
++      &structural_intersection/2,
++      &structural_difference/2
++    )
++    |> wrap_polymorphic()
++  end
++
++  # Boolean operations for the body of a lazy node: bare_*/2 simplifies polymorphic
++  # results semantically, which may unfold the very nodes being defined.
++  defp structural_union(left, right),
++    do: structural(left, right, &Poly.union/3, &bare_union/2, &structural_union/2)
++
++  defp structural_intersection(left, right),
++    do:
++      structural(left, right, &Poly.intersection/3, &bare_intersection/2, &structural_intersection/2)
++
++  defp structural_difference(left, right),
++    do: structural(left, right, &Poly.difference/3, &bare_difference/2, &structural_difference/2)
++
++  defp structural(left, right, poly_operation, operation, leaf_operation) do
++    left = unfold_node(left)
++    right = unfold_node(right)
++
++    if is_polymorphic(left) or is_polymorphic(right) do
++      poly_operation.(polymorphic_bdd(left), polymorphic_bdd(right), leaf_operation)
++      |> wrap_polymorphic()
++    else
++      operation.(left, right)
++    end
++  end
++
++  defp lazy_substitute({_, _, _} = nested, identity, node), do: lazy_element(nested, identity, node)
++
++  defp lazy_substitute(%{} = descr, identity, node) do
++    Map.new(descr, fn {key, value} -> {key, lazy_component(key, value, identity, node)} end)
++  end
++
++  defp lazy_component(:list, bdd, identity, node) do
++    bdd_map_reorder(bdd, fn bdd_leaf(head, tail) ->
++      bdd_leaf_new(lazy_element(head, identity, node), lazy_element(tail, identity, node))
++    end)
++  end
++
++  defp lazy_component(:tuple, bdd, identity, node) do
++    bdd_map_reorder(bdd, fn bdd_leaf(tag, elements) ->
++      bdd_leaf_new(tag, Enum.map(elements, &lazy_element(&1, identity, node)))
++    end)
++  end
++
++  defp lazy_component(:map, bdd, identity, node) do
++    bdd_map_reorder(bdd, fn bdd_leaf(tag, fields) ->
++      tag =
++        if is_list(tag),
++          do: fields_map(fn _key, value -> lazy_element(value, identity, node) end, tag),
++          else: tag
++
++      bdd_leaf_new(tag, fields_map(fn _key, value -> lazy_element(value, identity, node) end, fields))
++    end)
++  end
++
++  defp lazy_component(:fun, {kind, bdds}, identity, node) when kind in [:union, :negation] do
++    bdds =
++      Map.new(bdds, fn {arity, bdd} ->
++        bdd =
++          bdd_map_reorder(bdd, fn bdd_leaf(arguments, return) ->
++            bdd_leaf_new(
++              Enum.map(arguments, &lazy_element(&1, identity, node)),
++              lazy_element(return, identity, node)
++            )
++          end)
++
++        {arity, bdd}
++      end)
++
++    {kind, bdds}
++  end
++
++  defp lazy_component(_key, value, _identity, _node), do: value
++
++  defp lazy_element(element, identity, {solution_id, _, _} = node) do
++    {variables, _seen} = collect_variables(element, MapSet.new(), MapSet.new())
++
++    if MapSet.member?(variables, identity) do
++      id = {:tally_lazy, solution_id, element}
++      # The body of a node must not be a node: Descr lifts a node into a polymorphic
++      # descr as a monomorphic leaf, which would hide the top-level variables of the
++      # solution (its residual variable, for one).
++      generator = fn _recur ->
++        element |> unfold_node() |> lazy_substitute(identity, node) |> unfold_node()
++      end
++      make_node(id, %{lazy: {id, {:tally_lazy_if_set, id}, generator}}, generator)
++    else
++      element
++    end
++  end
++
++  defp unfold_node({_, _, _} = node), do: node |> to_descr() |> unfold_node()
++  defp unfold_node(descr), do: descr
++
+   defp substitute_normalized(descr, substitutions, _simplify?) when map_size(substitutions) == 0,
+     do: descr
+ 
+--- a/lib/vendor/descr_tally.ex
++++ b/lib/vendor/descr_tally.ex
+@@ -1187,7 +1187,7 @@
+         nodes =
+           Descr.recursive(%{
+             solution: fn recur ->
+-              Descr.__tally_substitute__(equation, %{variable => recur.(:solution)})
++              Descr.__tally_substitute_lazy__(equation, variable, recur.(:solution))
+             end
+           })
+ 

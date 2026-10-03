@@ -5,23 +5,49 @@ defmodule Mix.Tasks.Typecheck do
   the type of the main process.
 
       mix typecheck examples/dispatcher.exs
+      mix typecheck --ground examples/dispatcher.exs
+      mix typecheck --trace examples/negate.exs
+
+  By default the decorations are inferred (GRAMMAR.md, §9); `--ground` reads an
+  undecorated arrow as `@[none(), term()]`. In inference mode, `--trace` also prints
+  the constraints deferred to tallying, with the line of the rule that generated them.
 
   Exits with status 1 when some file has an error.
   """
 
   use Mix.Task
 
-  @impl true
-  def run([]), do: Mix.raise("usage: mix typecheck FILE...")
+  alias ProcessTypes.Types
 
-  def run(paths) do
+  @impl true
+  def run(args) do
+    case OptionParser.parse(args, strict: [ground: :boolean, trace: :boolean]) do
+      {opts, [_ | _] = paths, []} -> check(paths, opts)
+      _ -> Mix.raise("usage: mix typecheck [--ground] [--trace] FILE...")
+    end
+  end
+
+  defp check(paths, opts) do
+    mode = if opts[:ground], do: :ground, else: :infer
+
     errors? =
       Enum.reduce(paths, false, fn path, errors? ->
-        result = ProcessTypes.check_file(path)
+        result = ProcessTypes.check_file(path, mode: mode)
+        if opts[:trace] && mode == :infer, do: trace(result, path)
         Mix.shell().info(ProcessTypes.report(result, path))
         errors? or result.diagnostics != []
       end)
 
     if errors?, do: exit({:shutdown, 1})
+  end
+
+  defp trace(result, path) do
+    Mix.shell().info("#{path}: #{length(result.constraints)} constraints for tallying")
+
+    for c <- result.constraints do
+      Mix.shell().info(
+        "  line #{c.line || "-"}: #{Types.to_string(c.sub)} ≤ #{Types.to_string(c.sup)}"
+      )
+    end
   end
 end

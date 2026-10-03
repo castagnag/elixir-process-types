@@ -35,13 +35,19 @@ defmodule ProcessTypes.WebTest do
     assert get_resp_header(conn, "access-control-allow-origin") == ["*"]
   end
 
-  test "a rejected program" do
-    conn = call(:post, "/check", %{source: "$self_interface :a\nsend(self(), :b)\n"})
+  test "a rejected program, in ground mode" do
+    source = "$self_interface :a\nsend(self(), :b)\n"
+    conn = call(:post, "/check", %{source: source, mode: "ground"})
 
     assert %{"ok" => false, "diagnostics" => [%{"line" => 2, "message" => message}]} =
              JSON.decode!(conn.resp_body)
 
     assert message =~ "accepts :a, not :b"
+  end
+
+  test "a rejected program, in inference mode" do
+    conn = call(:post, "/check", %{source: "$self_interface :a\nsend(self(), :b)\n"})
+    assert %{"ok" => false, "diagnostics" => [%{"line" => 2}]} = JSON.decode!(conn.resp_body)
   end
 
   test "a request without source" do

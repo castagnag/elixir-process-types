@@ -4,8 +4,9 @@
 from the paper, §8 says so.*
 
 The prototype type-checks programs (it never runs them) against the type system of
-Sections 3–6 of the paper, with every decoration explicit. A program is a fragment of
-Elixir extended with *annotation lines*, and it is read in two steps:
+Sections 3–6 of the paper. By default it infers the decorations that annotations do not
+write, as in Section 8; in ground mode it reads them as written (§9). A program is a
+fragment of Elixir extended with *annotation lines*, and it is read in two steps:
 
 1. every annotation line (§1) is parsed, then replaced by a blank line, so that line
    numbers are preserved;
@@ -134,9 +135,19 @@ function annotation has the arity of the function.
   [o, i], where s = s₁ if n = 1 and s = {s₁, …, sₙ} otherwise. For n = 0 the domain
   is `{}`: `(-> t)` is the type of a zero-arity function, as in Section 2. So a
   two-argument function and a function of pairs have the same type.
-- An arrow written without `@[o, i]` is decorated `@[none(), term()]`. This is the
-  least arrow s →_𝟘^𝟙 t, applicable at every bracket, which fits functions that
-  neither expose nor read the mailbox of the process running them.
+- An arrow written without `@[o, i]` has the decorations of the mode (§9):
+  - in inference mode, the default, they are inferred (Section 8 of the paper). Each
+    occurrence of an annotation in the program (a `$ L`, a `$interface`, the
+    `$self_interface`) decorates its undecorated arrows with fresh type variables,
+    the same pair for equal arrows of that occurrence, as the function decorate(·) of
+    Section 8.1 does; the top-level arrows of a `$ L` get a fresh pair each (rule
+    i-abs);
+  - in ground mode they are `@[none(), term()]`, the least arrow s →_𝟘^𝟙 t,
+    applicable at every bracket, which fits functions that neither expose nor read
+    the mailbox of the process running them.
+
+  Written decorations are kept in both modes: they are those of code whose body is
+  not available for inference (Section 10 of the paper).
 - `pid()` is `pid(none())`, the top process type. `fun()` is the top function type
   𝟘 →_𝟙^𝟘 𝟙; it is an atomic symbol and carries no decorations. `term()` and `none()`
   are 𝟙 and 𝟘, and `boolean()` is `true or false`.
@@ -145,8 +156,21 @@ function annotation has the arity of the function.
 
 `$type name = T` inside `defmodule M` defines `M.name`, written `name` inside `M` and
 `M.name` elsewhere; at top level it defines a global `name`. Definitions may refer to
-one another in any order, but not recursively, directly or through other definitions.
-Recursive types will come with the move to a version of Descr that has them.
+one another in any order, and they may be recursive, directly or through other
+definitions, provided they are *contractive* (Section 3 of the paper): every cycle of
+references passes through a type constructor, that is, a tuple `{…}`, a `pid(…)` or an
+arrow (its arguments, its result or its decorations), and not only through `or`, `and`
+and `not`. Thus
+
+```
+$type me     = pid(me)                          # the type of send(self(), self())
+$type list   = nil or {integer(), list}
+$type worker = :bump or {:run, (-> term())@[:bump, worker]}
+```
+
+are definitions, while `$type t = t or integer()` and the pair `$type a = not b`,
+`$type b = a` are rejected. A recursive definition denotes a regular tree, the
+recursive type of the paper.
 
 ## 6. Required annotations and defaults
 
@@ -155,9 +179,10 @@ Recursive types will come with the move to a version of Descr that has them.
   Section 9).
 - Every `fn` with parameters has a `$ L`.
 - An `fn` without parameters may have one. Without it, `fn -> b end` gets the type
-  `(-> t)@[o, i]`, where t is the type of `b`, and `b` is typed at the bracket [o, i] of
-  the *expected type* when this is a single zero-arity arrow, at `[none(), term()]`
-  otherwise. The expected type is known
+  `(-> t)@[o, i]`, where t is the type of `b`. In inference mode, [o, i] are fresh
+  variables (rule i-abs, with the type of `b` as codomain). In ground mode, `b` is
+  typed at the bracket [o, i] of the *expected type* when this is a single zero-arity
+  arrow, at `[none(), term()]` otherwise. The expected type is known
   - at the message of a `send`: the interface of the target;
   - at an argument of a call: the corresponding component of the domain of the callee;
   - at the result of a function body: the codomain of the arrow being checked;
@@ -193,20 +218,33 @@ unnecessary here.
 
 ## 8. Deviations from the paper, and what is not supported
 
-Descr, the type representation of the Elixir compiler, imposes two deviations.
+Descr, the type representation of the Elixir compiler, imposes one deviation.
 
 - **No integer singleton types.** An integer literal has type `integer()`, and `n` is
   not a type. In a pattern, a literal n refines the matched type as `integer()` would,
   but it is neither subtracted from the types of the later clauses nor counted when
   checking that the clauses are exhaustive. Both approximations are sound.
-- **No recursive types.** A `$type` definition may not mention itself, directly or
-  through other definitions. Hence `send(self(), self())` and the interfaces that
-  mention their own pid are out of reach, and so is the most precise type of the jobs
-  of Section 2, whose input decoration is the interface of the worker that runs them.
-  A supertype without recursion often suffices: see [examples/dispatcher.exs](examples/dispatcher.exs).
 
 Not supported: floats, strings, binaries, lists, maps and structs; the pin operator `^x`
 and repeated pattern variables; guards other than type tests on variables; `receive …
 after`; `cond`, `with`, `for`, `try` and `unless`; captures `&f/1`; default arguments;
 `alias`, `import` and nested modules; `spawn/3` and the rest of `Process` and OTP;
 `dynamic()`.
+
+## 9. Inference and ground modes
+
+- **Inference** (the default) follows the algorithmic rules of Fig. `fig:inference`
+  (Section 8.2 of the paper). Undecorated arrows get type variables (§5.2). An
+  application posits a fresh result type, constrained by rule i-app; a tuple pattern
+  matched against a type with variables binds fresh projections (rule pe-tuple); an
+  unannotated `fn` runs at fresh decorations (§6). The body of a `spawn` with interface
+  t runs at fresh decorations [o, i] with o ≤ t ≤ i (rule i-spawn), and so does the
+  main process, t being its `$self_interface`. A constraint without variables is
+  checked at once. The others are solved together at the end, by tallying, and the
+  program is accepted if they have a solution. If they have none, the errors are
+  reported at the constraints that make them unsatisfiable, taken in the order in which
+  the rules generate them.
+- **Ground** (`mix typecheck --ground`) knows every decoration: an undecorated arrow is
+  `@[none(), term()]`, an unannotated `fn` runs at the bracket of its expected type
+  (§6), and the body of a `spawn` with interface t, like the main process, runs at
+  [t, t]. Every constraint is checked at once.

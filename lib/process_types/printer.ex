@@ -63,6 +63,7 @@ defmodule ProcessTypes.Printer do
     end
   end
 
+  defp inside({:rec, x, body}, names), do: {:rec, x, rename(body, names)}
   defp inside({:or, _, _} = union, names), do: union |> disjuncts() |> rename_union(names)
   defp inside({:and, a, b}, names), do: {:and, rename(a, names), rename(b, names)}
   defp inside({:not, a}, names), do: {:not, rename(a, names)}
@@ -105,11 +106,16 @@ defmodule ProcessTypes.Printer do
   defp leaf?({:pid, :none}), do: true
   defp leaf?({:raw, _}), do: true
   defp leaf?({:name, _, _}), do: true
+  defp leaf?({:recvar, _}), do: true
+  defp leaf?({:var, _}), do: true
   defp leaf?(t) when is_atom(t), do: true
   defp leaf?(_), do: false
 
   defp disjuncts({:or, a, b}), do: disjuncts(a) ++ disjuncts(b)
   defp disjuncts(t), do: [t]
 
-  defp size(t), do: t |> Types.to_syntax() |> disjuncts() |> length()
+  defp size(t), do: t |> Types.to_syntax() |> unrec() |> disjuncts() |> length()
+
+  defp unrec({:rec, _, body}), do: body
+  defp unrec(t), do: t
 end

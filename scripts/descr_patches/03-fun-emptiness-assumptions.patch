@@ -1,0 +1,20 @@
+The two fast paths of phi_starter/4 compared return types with subtype?/2, which starts
+with an empty set of assumptions: with a type recursive through the codomain of a function
+type, such as w = (-> w), comparing two copies of it (two recursive systems) did not
+terminate. They now use subtype_seen?/3, which keeps the assumptions, as phi/5 does.
+
+--- a/lib/vendor/descr.ex
++++ b/lib/vendor/descr.ex
+@@ -2706,10 +2706,10 @@
+     # input to the positive intersection yields a subtype of the return
+     case disjoint_non_empty_domains?({arguments, return}, positives, seen) do
+       :disjoint_non_empty ->
+-        apply_disjoint(arguments, positives) |> subtype?(return)
++        apply_disjoint(arguments, positives) |> subtype_seen?(return, seen)
+ 
+       :non_empty ->
+-        fun_apply_static(arguments, [positives]) |> subtype?(return)
++        fun_apply_static(arguments, [positives]) |> subtype_seen?(return, seen)
+ 
+       _ ->
+         # Initialize memoization cache for the recursive phi computation

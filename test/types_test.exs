@@ -186,6 +186,56 @@ defmodule ProcessTypes.TypesTest do
     end
   end
 
+  describe "recursive types" do
+    # Each call builds its own recursive system, so that the comparisons below are
+    # between two copies of the definitions (patch 03 of lib/vendor/).
+    defp rec(definitions, name) do
+      defs =
+        Map.new(definitions, fn {n, source} ->
+          quoted = Code.string_to_quoted!("(" <> String.replace(source, "@[", " ~> [") <> ")")
+          {:ok, body} = ProcessTypes.TypeSyntax.from_quoted(quoted)
+          {{nil, n}, {body, 1}}
+        end)
+
+      {:ok, t} = ProcessTypes.TypeSyntax.to_descr({:name, nil, name}, defs, nil)
+      t
+    end
+
+    test "pid(me) = me" do
+      me = rec(%{me: "pid(me)"}, :me)
+      assert equal?(pid(me), me)
+      assert subtype?(me, pid())
+      refute subtype?(me, pid(integer()))
+    end
+
+    test "recursion through the codomain of an arrow" do
+      w = rec(%{w: "(-> w)"}, :w)
+      assert equal?(w, rec(%{w: "(-> w)"}, :w))
+      assert subtype?(w, rec(%{v: "(-> v or :a)"}, :v))
+      refute subtype?(rec(%{v: "(-> v or :a)"}, :v), w)
+      refute subtype?(w, rec(%{i: "(-> integer())"}, :i))
+    end
+
+    test "recursion through the decorations of an arrow" do
+      # i is contravariant: neither of wa and wb is below the other
+      wa = rec(%{wa: ":bump or {:run, (-> term())@[none(), wa]}"}, :wa)
+      wb = rec(%{wb: ":bump or :tick or {:run, (-> term())@[none(), wb]}"}, :wb)
+      refute subtype?(wa, wb)
+      refute subtype?(wb, wa)
+      # o is covariant
+      oa = rec(%{oa: ":bump or {:run, (-> term())@[oa, term()]}"}, :oa)
+      ob = rec(%{ob: ":bump or :tick or {:run, (-> term())@[ob, term()]}"}, :ob)
+      assert subtype?(oa, ob)
+      refute subtype?(ob, oa)
+    end
+
+    test "a negation under a constructor" do
+      t = rec(%{t: "{not t}"}, :t)
+      assert subtype?(tuple([a()]), t)
+      refute subtype?(tuple([tuple([a()])]), t)
+    end
+  end
+
   describe "printing" do
     test "pids and arrows read back in the syntax of annotations" do
       assert to_string(pid(a())) == "pid(:a)"
@@ -201,6 +251,12 @@ defmodule ProcessTypes.TypesTest do
                "(integer(), :a -> :a)"
 
       assert to_string(tuple([atom([:ready]), pid(pid(a()))])) == "{:ready, pid(pid(:a))}"
+    end
+
+    test "recursive types read back with rec" do
+      me = rec(%{me: "pid(me)"}, :me)
+      assert to_string(me) == "rec me. pid(me)"
+      assert to_string(tuple([me])) == "{rec me. pid(me)}"
     end
   end
 end

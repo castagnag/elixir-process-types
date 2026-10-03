@@ -4,8 +4,9 @@ defmodule ProcessTypes.Web do
 
       GET  /          the page
       GET  /examples  the programs of examples/, as [{"name", "source"}]
-      POST /check     {"source": ...}, answered by {"ok", "diagnostics", "functions",
-                      "main"} or {"error"}
+      POST /check     {"source": ..., "mode": "infer" | "ground"}, answered by {"ok",
+                      "diagnostics", "functions", "main"} or {"error"}; the mode is
+                      inference by default (GRAMMAR.md, §9)
 
   `mix playground` serves it on localhost. A check runs with a time limit, and the
   answers carry CORS headers, so that the page may also be served from elsewhere,
@@ -34,8 +35,14 @@ defmodule ProcessTypes.Web do
 
   post "/check" do
     case conn.body_params do
-      %{"source" => source} when is_binary(source) -> json(conn, 200, check(source))
-      _ -> json(conn, 400, %{error: ~s(expected {"source": "..."})})
+      %{"source" => source, "mode" => "ground"} when is_binary(source) ->
+        json(conn, 200, check(source, mode: :ground))
+
+      %{"source" => source} when is_binary(source) ->
+        json(conn, 200, check(source))
+
+      _ ->
+        json(conn, 400, %{error: ~s(expected {"source": "..."})})
     end
   end
 
@@ -48,11 +55,11 @@ defmodule ProcessTypes.Web do
   end
 
   @doc "Checks a program within the time limit; the result is ready for JSON."
-  def check(source) do
+  def check(source, opts \\ []) do
     task =
       Task.async(fn ->
         try do
-          {:ok, ProcessTypes.check_string(source)}
+          {:ok, ProcessTypes.check_string(source, opts)}
         catch
           kind, reason -> {:crash, Exception.format_banner(kind, reason)}
         end

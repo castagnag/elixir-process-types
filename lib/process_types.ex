@@ -10,20 +10,23 @@ defmodule ProcessTypes do
   alias ProcessTypes.{Checker, Diagnostic, Frontend}
   alias ProcessTypes.Checker.Result
 
-  @doc "Checks a program given as a string."
-  def check_string(source) do
+  @doc """
+  Checks a program given as a string. Options are those of `ProcessTypes.Checker.check/2`:
+  `mode: :infer` (the default) or `mode: :ground` (GRAMMAR.md, §9).
+  """
+  def check_string(source, opts \\ []) do
     case Frontend.parse(source) do
       {nil, diagnostics} ->
-        %Result{diagnostics: diagnostics}
+        %Result{diagnostics: diagnostics, mode: Keyword.get(opts, :mode, :infer)}
 
       {program, diagnostics} ->
-        result = Checker.check(program)
+        result = Checker.check(program, opts)
         %{result | diagnostics: Enum.sort_by(diagnostics ++ result.diagnostics, & &1.line)}
     end
   end
 
   @doc "Checks the program in a file."
-  def check_file(path), do: path |> File.read!() |> check_string()
+  def check_file(path, opts \\ []), do: path |> File.read!() |> check_string(opts)
 
   @doc "A human-readable report of a result."
   def report(%Result{} = result, file \\ "nofile") do

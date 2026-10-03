@@ -5,9 +5,7 @@
 
 defmodule Server do
   $type job_writes = :bump or {:work_add, integer()}
-  $type job_reads  = :bump or {:work_add, integer()} or {:total, pid({:total, integer()})}
-                     or {:run, fun()}
-  $type job        = (-> term())@[job_writes, job_reads]
+  $type job        = (-> term())@[job_writes, worker]
   $type worker     = :bump or {:work_add, integer()} or {:total, pid({:total, integer()})}
                      or {:run, job}
 

@@ -3,7 +3,9 @@ defmodule ProcessTypes.CheckerTest do
 
   alias ProcessTypes.Types
 
-  defp check(source), do: ProcessTypes.check_string(source)
+  # The rules of Sections 3–6, with every decoration known: ground mode (GRAMMAR.md,
+  # §9). Inference is tested in infer_test.exs.
+  defp check(source), do: ProcessTypes.check_string(source, mode: :ground)
   defp errors(source), do: Enum.map(check(source).diagnostics, &{&1.line, &1.message})
 
   defp main(source),
@@ -260,11 +262,56 @@ defmodule ProcessTypes.CheckerTest do
   end
 
   describe "types and annotations" do
-    test "recursive type definitions are rejected" do
+    test "recursive type definitions: send(self(), self())" do
+      result = check("$type me = pid(me)\n$self_interface me\nsend(self(), self())\n")
+      assert result.diagnostics == []
+      assert ProcessTypes.Printer.to_string(result.main, result.names) == "me"
+    end
+
+    test "a recursive function on a recursive type" do
+      source = """
+      $type list = nil or {integer(), list}
+      defmodule L do
+        $ list -> integer()
+        def len(nil), do: 0
+        def len({_, t}), do: 1 + len(t)
+      end
+      L.len({1, {2, nil}})
+      L.len({1, {:two, nil}})
+      """
+
+      assert errors(source) == [
+               {8,
+                "L.len/1 cannot be applied to {integer(), {:two, nil}}: its type is (list -> integer())"}
+             ]
+    end
+
+    test "recursion through the decorations of an arrow" do
+      assert main("""
+             $type worker = :bump or {:run, (-> term())@[:bump, worker]}
+             $interface worker
+             w = spawn(fn ->
+               receive do
+                 {:run, j} -> j.()
+                 :bump -> :ok
+               end
+             end)
+             send(w, {:run, fn -> send(self(), :bump) end})
+             :ok
+             """) == ":ok"
+    end
+
+    test "a definition recursive through or, and and not only is rejected" do
       assert_error(
-        "$type t = {:a, t}\n$self_interface t\n:ok\n",
+        "$type t = t or integer()\n$self_interface t\n:ok\n",
         2,
-        "recursive type definitions are not supported yet: t -> t"
+        "the definition of t is not contractive: the cycle t -> t passes through no tuple, pid or arrow"
+      )
+
+      assert_error(
+        "$type a = b\n$type b = a\n$self_interface a\n:ok\n",
+        3,
+        "the cycle a -> b -> a"
       )
     end
 
