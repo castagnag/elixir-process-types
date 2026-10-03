@@ -1,7 +1,9 @@
 to_quoted has no clause for recursive nodes (term_type?/1 calls Map.delete/2 on the node
 tuple). A node is printed rec(x, body), body being one unfolding of the node in which the
 node itself is printed x; x is the name of its equation, made distinct from the names
-of the nodes around it.
+of the nodes around it. term_type?/1 accepts nodes, so that a type variable intersected
+with a recursive type prints too (polymorphic_line_to_quoted/2 calls term_type?/1 on the
+leaf).
 
 --- a/lib/vendor/descr.ex
 +++ b/lib/vendor/descr.ex
@@ -54,3 +56,11 @@ of the nodes around it.
    defp polymorphic_line_to_quoted({positive, negative, descr}, opts) do
      variables =
        Enum.map(positive, &variable_to_quoted(&1, opts)) ++
+@@ -1850,6 +1885,7 @@
+   """
+   def term_type?(:term), do: true
+   def term_type?({:type_variables, _bdd} = descr), do: subtype?(term(), descr)
++  def term_type?({_, _, _} = node), do: node |> to_descr() |> term_type?()
+   def term_type?(descr), do: subtype_static?(unfolded_term(), Map.delete(descr, :dynamic))
+ 
+   @doc """

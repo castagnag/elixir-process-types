@@ -141,7 +141,7 @@ defmodule ProcessTypes.InferTest do
       assert lines(source) == [11]
     end
 
-    @tag skip: "intersecting two copies of a recursive tuple type does not terminate"
+    @tag skip: "the intersection of a recursive tuple type does not terminate"
     test "a recursive type in an undecorated annotation" do
       assert lines("""
              $type list = nil or {integer(), list}
@@ -154,7 +154,7 @@ defmodule ProcessTypes.InferTest do
              """) == []
     end
 
-    @tag skip: "emptiness of a recursive type with variables does not terminate"
+    @tag skip: "validating the solution loses the assumptions in function emptiness"
     test "a type recursive through written decorations, with inferred brackets" do
       assert lines("""
              $type worker = :bump or {:run, (-> term())@[:bump, worker]}

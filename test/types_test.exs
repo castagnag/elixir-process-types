@@ -236,6 +236,48 @@ defmodule ProcessTypes.TypesTest do
     end
   end
 
+  describe "recursive types with type variables" do
+    # k = {k} or x, a recursive type whose unfolding has a variable at the top level, as
+    # tallying builds its recursive solutions. Each call builds its own system.
+    defp knot(x) do
+      recursive(%{k: fn recur -> bare_union(tuple([recur.(:k)]), x) end}) |> Map.fetch!(:k)
+    end
+
+    test "subtyping with a variable intersected with a recursive type (patch 04)" do
+      x = var(:x)
+      y = var(:y)
+      k = knot(x)
+      assert subtype?(intersection(y, k), k)
+      assert subtype?(x, k)
+      refute subtype?(k, x)
+    end
+
+    @tag timeout: 5_000
+    test "two copies of a recursive type with a variable (patch 05)" do
+      x = var(:x)
+      assert subtype?(knot(x), knot(x))
+    end
+
+    @tag timeout: 5_000
+    test "tallying keeps the recursive solutions that have residual variables" do
+      # Every system below has the solution i = ia = term(); tallying found its
+      # principal solution but discarded it, and answered that there was none.
+      i = var(:i)
+      ia = var(:ia)
+      assert [_] = tally([{i, ia}, {tuple([ia]), i}])
+      assert [_] = tally([{i, ia}, {union(atom([:bump]), tuple([pid(ia)])), i}])
+
+      job = arrow(tuple([]), none(), ia, term())
+      assert [_] = tally([{i, ia}, {union(atom([:bump]), tuple([job])), i}])
+    end
+
+    test "a variable intersected with a recursive type prints (patch 02)" do
+      x = var(:x)
+      me = recursive(%{me: fn recur -> pid(recur.(:me)) end}) |> Map.fetch!(:me)
+      assert to_string(intersection(x, me)) == "x and (rec me. pid(me))"
+    end
+  end
+
   describe "printing" do
     test "pids and arrows read back in the syntax of annotations" do
       assert to_string(pid(a())) == "pid(:a)"

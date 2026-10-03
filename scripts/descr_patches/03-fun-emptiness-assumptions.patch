@@ -5,7 +5,7 @@ terminate. They now use subtype_seen?/3, which keeps the assumptions, as phi/5 d
 
 --- a/lib/vendor/descr.ex
 +++ b/lib/vendor/descr.ex
-@@ -2706,10 +2706,10 @@
+@@ -2707,10 +2707,10 @@
      # input to the positive intersection yields a subtype of the return
      case disjoint_non_empty_domains?({arguments, return}, positives, seen) do
        :disjoint_non_empty ->
