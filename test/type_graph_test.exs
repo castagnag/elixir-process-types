@@ -1,12 +1,11 @@
 defmodule ProcessTypes.TypeGraphTest do
   use ExUnit.Case, async: true
 
-  alias ProcessTypes.{TypeGraph, TypeSyntax, Types}
+  alias ProcessTypes.{Annotations, TypeGraph, TypeSyntax, Types}
 
-  # Annotations, parsed as in annotation lines (`@[` is rewritten as `~> [`).
+  # Annotations, parsed as in annotation lines.
   defp parse(source) do
-    quoted = Code.string_to_quoted!("(" <> String.replace(source, "@[", " ~> [") <> ")")
-    {:ok, t} = TypeSyntax.from_quoted(quoted)
+    {:ok, t} = Annotations.parse_type(source)
     t
   end
 
@@ -19,6 +18,19 @@ defmodule ProcessTypes.TypeGraphTest do
   defp decorate(source, prefix \\ "x") do
     {:ok, t, minted} = TypeGraph.decorate(parse(source), @defs, nil, prefix)
     {t, minted}
+  end
+
+  describe "the decoration @ u (GRAMMAR.md, §5.1)" do
+    test "it is @[u, u], binds tighter than or, and is printed back" do
+      assert parse("(-> :a) @ :b") == parse("(-> :a)@[:b, :b]")
+      assert parse("(-> :a) @ :b or :c") == parse("(-> :a)@[:b, :b] or :c")
+      assert parse("(-> :a) @ (:b or :c)") == parse("(-> :a)@[:b or :c, :b or :c]")
+      assert parse("(-> :a) @ (-> :b)") == parse("(-> :a)@[(-> :b), (-> :b)]")
+
+      for source <- ["(-> :a) @ (:b or :c)", "(-> :a) @ (not :b)", "(-> :a) @ ((-> :b) @ :c)"] do
+        assert TypeSyntax.to_string(parse(source)) == source
+      end
+    end
   end
 
   describe "decorate(·) (Definition def:decorate)" do

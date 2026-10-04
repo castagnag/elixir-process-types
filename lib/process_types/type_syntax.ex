@@ -9,6 +9,7 @@ defmodule ProcessTypes.TypeSyntax do
       {:pid, t}                        pid(t); pid() is {:pid, :none}
       {:tuple, [t]}                    {t1, ..., tn}
       {:arrow, [t], t, {o, i} | nil}   (t1, ..., tn -> t)@[o, i]; nil is @[none(), term()]
+                                       (t1, ..., tn -> t) @ u is @[u, u]
       {:or, t, t} | {:and, t, t} | {:not, t}
       {:name, module | nil, name}      a type defined by $type
       {:raw, quoted}                   only when printing a type that has no source form
@@ -56,12 +57,27 @@ defmodule ProcessTypes.TypeSyntax do
   defp parse({:not, _, [a]}), do: {:not, parse(a)}
   defp parse({:__block__, _, [q]}), do: parse(q)
 
+  # `@[o, i]` and `@ u`, rewritten as `~>`. The quoted form of an arrow is a list of one
+  # `->`, so `@ (-> t)` is told from `@[o, i]` by its element.
   defp parse({:~>, _, [arrow, decorations]}) do
     case {parse(arrow), decorations} do
-      {{:arrow, args, ret, nil}, [o, i]} -> {:arrow, args, ret, {parse(o), parse(i)}}
-      {{:arrow, _, _, nil}, _} -> bad("decorations are written @[o, i], with two types")
-      {{:arrow, _, _, _}, _} -> bad("an arrow carries one pair of decorations")
-      _ -> bad("@[o, i] must follow a parenthesized arrow")
+      {{:arrow, args, ret, nil}, [o, i]} ->
+        {:arrow, args, ret, {parse(o), parse(i)}}
+
+      {{:arrow, args, ret, nil}, [{:->, _, _}] = u} ->
+        {:arrow, args, ret, same(parse(u))}
+
+      {{:arrow, args, ret, nil}, u} when not is_list(u) ->
+        {:arrow, args, ret, same(parse(u))}
+
+      {{:arrow, _, _, nil}, _} ->
+        bad("decorations are written @[o, i], with two types, or @ u")
+
+      {{:arrow, _, _, _}, _} ->
+        bad("an arrow carries one pair of decorations")
+
+      _ ->
+        bad("@[o, i] or @ u must follow a parenthesized arrow")
     end
   end
 
@@ -80,6 +96,8 @@ defmodule ProcessTypes.TypeSyntax do
       bad(
         "integer singleton types such as #{n} are not available (Descr has none): use integer()"
       )
+
+  defp same(u), do: {u, u}
 
   defp bad(message), do: throw({:type_syntax, message})
 
@@ -123,6 +141,7 @@ defmodule ProcessTypes.TypeSyntax do
 
     case decorations do
       nil -> arrow
+      {u, u} -> arrow <> " @ " <> paren(match?({:arrow, _, _, {_, _}}, u), show(u, 4))
       {o, i} -> arrow <> "@[" <> show(o, 0) <> ", " <> show(i, 0) <> "]"
     end
   end

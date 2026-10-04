@@ -18,7 +18,7 @@ defmodule ProcessTypes.Web do
 
   @root Path.expand("../..", __DIR__)
   @examples Path.join(@root, "examples")
-  @timeout 10_000
+  @timeout 45_000
 
   plug :cors
   plug :match
@@ -62,17 +62,19 @@ defmodule ProcessTypes.Web do
 
   @doc "Checks a program within the time limit; the result is ready for JSON."
   def check(source, opts \\ []) do
+    # Encoding prints types, so it runs in the task: recursive nodes are local to the
+    # process that built them (lib/vendor/README.md, patch 07).
     task =
       Task.async(fn ->
         try do
-          {:ok, ProcessTypes.check_string(source, opts)}
+          {:ok, source |> ProcessTypes.check_string(opts) |> encode()}
         catch
           kind, reason -> {:crash, Exception.format_banner(kind, reason)}
         end
       end)
 
     case Task.yield(task, @timeout) || Task.shutdown(task, :brutal_kill) do
-      {:ok, {:ok, result}} -> encode(result)
+      {:ok, {:ok, json}} -> json
       {:ok, {:crash, message}} -> %{error: "the checker failed: " <> message}
       {:exit, reason} -> %{error: "the checker failed: #{inspect(reason)}"}
       nil -> %{error: "the check takes more than #{div(@timeout, 1000)} seconds"}

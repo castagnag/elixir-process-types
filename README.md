@@ -4,7 +4,8 @@ A prototype type checker for Elixir processes. It implements the type system of
 Sections 3–6 of the accompanying paper on set-theoretic types for Elixir actors:
 a process is typed `pid(t)`, where `t` is the type of the messages it accepts, and
 an arrow carries the mailbox decorations of the process that runs it, written
-`(s -> t)@[o, i]`. Programs are type-checked, never run.
+`(s -> t)@[o, i]`, or `(s -> t) @ u` when both are u. Programs are type-checked, never
+run.
 
 By default the decorations that annotations do not write are inferred, as in
 Section 8 of the paper: they get type variables, and the constraints that the rules

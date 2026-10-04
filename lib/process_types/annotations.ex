@@ -138,13 +138,17 @@ defmodule ProcessTypes.Annotations do
     end
   end
 
-  defp parse_type(text) do
+  @doc """
+  Parses the type of an annotation (GRAMMAR.md, §1): `@` is rewritten as `~>`, so that
+  `(s -> t)@[o, i]` and `(s -> t) @ u` are Elixir code, and the type is parenthesized.
+  """
+  def parse_type(text) do
     text = String.trim(text)
 
     if text == "" do
       {:error, "the annotation has no type"}
     else
-      code = "(" <> Regex.replace(~r/\s*@\s*\[/, text, " ~> [") <> ")"
+      code = "(" <> Regex.replace(~r/\s*@\s*/, text, " ~> ") <> ")"
 
       case Code.string_to_quoted(code) do
         {:ok, quoted} -> TypeSyntax.from_quoted(quoted)

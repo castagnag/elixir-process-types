@@ -37,8 +37,8 @@ or the next line begins with `or` or `and`. This is how the running example writ
 `worker` on two lines. A `#` starts a comment, on annotation lines too.
 
 The types of annotations are also parsed by the Elixir parser, after two rewrites: the
-suffix `@[` becomes the operator `~> [`, so that `(s -> t)@[o, i]` parses, and the whole
-type is wrapped in parentheses, so that a bare `s -> t` parses.
+operator `@` becomes the operator `~>`, so that `(s -> t)@[o, i]` and `(s -> t) @ u`
+parse, and the whole type is wrapped in parentheses, so that a bare `s -> t` parses.
 
 ## 2. Programs
 
@@ -116,18 +116,21 @@ T ::= :a | true | false | nil                    singleton types (atoms only, §
     | integer() | atom() | boolean() | tuple() | term() | none()
     | pid() | pid(T) | fun()
     | {T, …, T}                                   tuple types
-    | (T, …, T -> T)⟨@[T, T]⟩?                    arrow, with decorations @[o, i]
+    | (T, …, T -> T)⟨@[T, T] | @ T⟩?              arrow, with decorations @[o, i] or @ u
     | not T | T and T | T or T | (T)
     | name | Alias.name                           defined by $type
 L ::= A ⟨and A⟩*                                  function annotations
-A ::= (T, …, T -> T)⟨@[T, T]⟩? | name             a name used as an A must denote an L
+A ::= (T, …, T -> T)⟨@[T, T] | @ T⟩? | name       a name used as an A must denote an L
 ```
 
-`not` binds tighter than `and`, which binds tighter than `or`. The suffix `@[o, i]`
-applies to the parenthesized arrow it follows, so the parentheses of a decorated arrow
-are mandatory. When a function annotation `$ L` is a single undecorated arrow, its
-parentheses may be omitted, as in `$ integer() -> integer()`. Every arrow of a
-function annotation has the arity of the function.
+`not` binds tighter than `and`, which binds tighter than `or`. The suffixes `@[o, i]`
+and `@ u` apply to the parenthesized arrow they follow, so the parentheses of a
+decorated arrow are mandatory. The suffix `@ u` binds tighter than `and` and `or`, so a
+union or an intersection u is parenthesized: `(s -> t) @ (:a or :b)`, whereas
+`(s -> t) @ :a or :b` is `((s -> t) @ :a) or :b`. When a function annotation `$ L` is
+a single undecorated arrow, its parentheses may be omitted, as in
+`$ integer() -> integer()`. Every arrow of a function annotation has the arity of the
+function.
 
 ### 5.2 Meaning
 
@@ -135,7 +138,9 @@ function annotation has the arity of the function.
   [o, i], where s = s₁ if n = 1 and s = {s₁, …, sₙ} otherwise. For n = 0 the domain
   is `{}`: `(-> t)` is the type of a zero-arity function, as in Section 2. So a
   two-argument function and a function of pairs have the same type.
-- An arrow written without `@[o, i]` has the decorations of the mode (§9):
+- `(s₁, …, sₙ -> t) @ u` is `(s₁, …, sₙ -> t)@[u, u]`, the arrow typed at the bracket
+  [u, u]. Types are printed in this form when the two decorations are the same.
+- An arrow written without decorations has the decorations of the mode (§9):
   - in inference mode, the default, they are inferred (Section 8 of the paper). Each
     occurrence of an annotation in the program (a `$ L`, a `$interface`, the
     `$self_interface`) decorates its undecorated arrows with fresh type variables,

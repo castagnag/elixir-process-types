@@ -43,6 +43,12 @@ defmodule ProcessTypes.WebTest do
     assert get_resp_header(conn, "access-control-allow-origin") == ["*"]
   end
 
+  test "an accepted program with recursive types, printed in the checking process" do
+    conn = call(:post, "/check", %{source: File.read!("examples/dispatcher.exs")})
+    assert %{"ok" => true, "main" => main} = JSON.decode!(conn.resp_body)
+    assert main =~ "{:run, (-> Server.job_writes)"
+  end
+
   test "a rejected program, in ground mode" do
     source = "$self_interface :a\nsend(self(), :b)\n"
     conn = call(:post, "/check", %{source: source, mode: "ground"})

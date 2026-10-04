@@ -127,6 +127,9 @@ defmodule ProcessTypes.CheckerTest do
 
       assert errors(source) == []
       assert_error(String.replace(source, "@[:a, :a]", "@[none(), :a]"), 3, "returns pid()")
+      assert errors(String.replace(source, "@[:a, :a]", " @ :a")) == []
+      assert errors(String.replace(source, "@[:a, :a]", " @ (:a or :b)")) == []
+      assert_error(String.replace(source, "@[:a, :a]", " @ :b"), 3, "returns pid(:b)")
     end
 
     test "a send is checked against the interface of the target" do
@@ -325,6 +328,12 @@ defmodule ProcessTypes.CheckerTest do
 
     test "decorations need a parenthesized arrow" do
       assert_error("$self_interface :a@[:a, :a]\n:ok\n", 1, "must follow a parenthesized arrow")
+      assert_error("$self_interface :a @ :a\n:ok\n", 1, "must follow a parenthesized arrow")
+    end
+
+    test "decorations are a pair or a single type" do
+      assert_error("$self_interface (-> :a)@[:a]\n:ok\n", 1, "with two types, or @ u")
+      assert_error("$self_interface (-> :a) @ :a @ :a\n:ok\n", 1, "one pair of decorations")
     end
   end
 end

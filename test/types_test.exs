@@ -192,8 +192,7 @@ defmodule ProcessTypes.TypesTest do
     defp rec(definitions, name) do
       defs =
         Map.new(definitions, fn {n, source} ->
-          quoted = Code.string_to_quoted!("(" <> String.replace(source, "@[", " ~> [") <> ")")
-          {:ok, body} = ProcessTypes.TypeSyntax.from_quoted(quoted)
+          {:ok, body} = ProcessTypes.Annotations.parse_type(source)
           {{nil, n}, {body, 1}}
         end)
 
@@ -288,6 +287,7 @@ defmodule ProcessTypes.TypesTest do
                "(integer() -> boolean())@[:a, :b]"
 
       assert to_string(arrow(tuple([]), none(), term(), term())) == "(-> term())"
+      assert to_string(arrow(integer(), a(), a(), boolean())) == "(integer() -> boolean()) @ :a"
 
       assert to_string(arrow(tuple([integer(), a()]), none(), term(), a())) ==
                "(integer(), :a -> :a)"
