@@ -120,9 +120,9 @@ defmodule ProcessTypes.InferTest do
     assert length(result.constraints) > 0
   end
 
-  # Cases that the copied Descr cannot solve yet (lib/vendor/README.md).
+  # Cases that the copied Descr could not solve before patches 06 and 07; the skipped one
+  # is still a limit (lib/vendor/README.md).
   describe "pending on Descr" do
-    @tag skip: "tallying does not terminate when the job's decorations are variables"
     test "the jobs of Section 2, with an undecorated job" do
       source = """
       $type job = (-> term())

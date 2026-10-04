@@ -68,21 +68,40 @@ applies the patches of `scripts/descr_patches/`, in order:
    polymorphic leaves that connectives store when they unfold a node are exposed, also
    in emptiness checks. Without it, tallying does not terminate on {x ∨ :b} ≤ x, nor on
    the validation of the recursive worker of limit 3 below.
+7. `07-intern-nodes-memoize-emptiness.patch`, **provisional**, to be replaced by
+   Guillaume Duboc's fix when there is one. (a) Nodes are interned in the process
+   dictionary: a node is `{n, :node, :node}`, where `n` maps to its id, state and
+   generator; the same id gives the same node, unfoldings are cached, and neither the
+   ids of lazy nodes nor the comparison of systems contain closures. Without it, ids
+   embed substitutions and states whose generators capture other states, so hashing or
+   comparing a node (`phash2` in `bdd_leaf_new/2`, `===`) traverses a tree exponentially
+   larger than the term in memory. (b) Emptiness results are memoized in the process
+   dictionary where a key enters `seen` (nodes and the diagrams of functions, lists, maps
+   and tuples), as in Algorithm 2 of "Implementing Set-Theoretic Types": a key being
+   checked is assumed empty; when its check fails, the positive results recorded since
+   are rolled back; when the outermost check succeeds, they are definitive. Being shared
+   by every check of the process, the memo also keeps the assumptions where a check
+   restarts without `seen` (the fast paths of `phi_starter/4`, `simplify_polymorphic/1`),
+   which made the emptiness of limit 1 descend forever. (c) `syntactic_vars/1`, the
+   variables that occur in a type, without the equivalence checks of `vars/1`. Since
+   nodes live in the process dictionary, a type with recursive nodes must be used in the
+   process that built it. Solves limit 1 below.
 
-Patches 02 to 06 address limits of the branch that its own tests do not exercise; they
+Patches 02 to 07 address limits of the branch that its own tests do not exercise; they
 were reported to Guillaume Duboc, with the limits below.
 
 Only `ProcessTypes.Types` calls these modules.
 
 ## Limits found while using the branch (2026-10-03)
 
-Three cases that inference met; the first two are not handled by the copied Descr, with
-the patches above, and the corresponding tests of `test/infer_test.exs` are skipped. Run them, if at
-all, under a memory limit: some of these loops allocate gigabytes in seconds. In the
+Three cases that inference met; with the patches above, only the second is not handled
+by the copied Descr, and the corresponding test of `test/infer_test.exs` is skipped. Run
+it, if at all, under a memory limit: this loop allocates gigabytes in seconds. In the
 reproducers, `D` is `ProcessTypes.Descr`, and `arrow(s, o, i, t)` is the encoding of
 `ProcessTypes.Types`, `D.fun([D.union(s, D.port()), D.fun([o], D.port()), D.fun([], i)], t)`.
 
-1. **Recursive solutions through a function type.** With patch 06, tallying solves
+1. **Recursive solutions through a function type** (solved by patch 07). With patch 06,
+   tallying solved
    {x ∨ :b} ≤ x and the two-constraint system of the jobs of Section 2,
 
    ```elixir
@@ -95,8 +114,10 @@ reproducers, `D` is `ProcessTypes.Descr`, and `arrow(s, o, i, t)` is the encodin
    but not the constraints of the whole program (`job = (-> term())`). Six of them
    suffice: `o_spawn ≤ w`, `w ≤ i_spawn`, `i_spawn ∧ {:run, term()} ≤ {p1, p2}`,
    `o_app ≤ o_spawn`, `i_spawn ≤ i_app`, `p2 ≤ arrow({}, o_app, i_app, res)`, with `w`
-   as above. They do not finish in 120 s, although only 8 distinct nodes are unfolded:
-   emptiness checks seem to produce ever new diagrams (not verified).
+   as above. They did not finish in 120 s: the emptiness check descended forever, losing
+   its assumptions in the fast paths of `phi_starter/4` and in `simplify_polymorphic/1`,
+   and hashing nodes became exponential. With patch 07 they are solved in about 20 ms,
+   and the whole program in about 3 s, with the expected error.
 
 2. **Intersection of a recursive tuple type.** With `l = nil or {integer(), l}`,
    `D.intersection(l, l)` does not terminate, nor does the intersection of two copies

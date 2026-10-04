@@ -218,7 +218,7 @@ defmodule ProcessTypes.Backend.Infer do
   defp instantiate(sigma, roles) do
     fn t ->
       t = Types.substitute(t, sigma)
-      Types.substitute(t, Map.new(Types.vars(t), &{&1, ground(roles[&1])}))
+      Types.substitute(t, Map.new(Types.syntactic_vars(t), &{&1, ground(roles[&1])}))
     end
   end
 

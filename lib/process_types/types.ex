@@ -94,6 +94,12 @@ defmodule ProcessTypes.Types do
   @doc "The variables that occur in `t` (those that matter: `t` depends on them)."
   defdelegate vars(t), to: D
 
+  @doc """
+  The variables that occur in `t` syntactically, including those that do not matter:
+  much cheaper than `vars/1` on recursive types, and enough to substitute them all.
+  """
+  defdelegate syntactic_vars(t), to: D
+
   @doc "Whether `t` contains no type variable."
   def ground?(t), do: MapSet.size(D.vars(t)) == 0
 
