@@ -51,8 +51,11 @@ The playground is a page where a program is checked as it is written. The exampl
 can be loaded from a menu, or directly with `?example=name` (e.g.
 `http://localhost:4000/?example=dispatcher_errors`), and each error links to its line. The border between the two panes can be dragged
 (or moved with the arrow keys), and the README and the grammar open from the header.
+Each check runs in a process of its own (`ProcessTypes.Web.Runner`), which is interrupted
+after 90 s, when its heap exceeds 2 GB, when the server exceeds 4 GB, or when the same
+page asks for a newer check; the answer then says why, and the server goes on.
 The server listens on localhost only. Its API (`GET /examples`, `GET /docs`, `POST /check` with
-`{"source": ...}`) answers with CORS headers, so that the page can also be served
+`{"source": ..., "client": ...}`) answers with CORS headers, so that the page can also be served
 statically, with `window.PLAYGROUND_API` set to the address of the server. Before
 exposing the server publicly, note that every program creates atoms (its identifiers
 and literals), which the BEAM never collects: requests must then be limited.
@@ -129,6 +132,7 @@ checking.
 | `ProcessTypes.Backend` | how the checker discharges constraints (`Ground`: at once) |
 | `ProcessTypes.Backend.Infer` | inference: variables, deferred constraints, tallying |
 | `ProcessTypes.Web` | the playground server; its page is `priv/playground/index.html` |
+| `ProcessTypes.Web.Runner` | the limits of time and memory of the playground's checks |
 | `ProcessTypes.Descr` | in `lib/vendor/`: the copied type representation (Acknowledgements) |
 
 ## Acknowledgements

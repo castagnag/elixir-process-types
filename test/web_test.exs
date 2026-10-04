@@ -64,6 +64,22 @@ defmodule ProcessTypes.WebTest do
     assert %{"ok" => false, "diagnostics" => [%{"line" => 2}]} = JSON.decode!(conn.resp_body)
   end
 
+  test "a check interrupts the previous one of the same client, not those of others" do
+    slow = File.read!("examples/dispatcher_undecorated.exs")
+    first = Task.async(fn -> Web.check(slow, client: "a") end)
+    other = Task.async(fn -> Web.check(slow, client: "b") end)
+    Process.sleep(200)
+    assert %{ok: true} = Web.check("$self_interface :a\nsend(self(), :a)\n", client: "a")
+    assert Task.await(first) == %{error: "interrupted by a newer check"}
+    assert Task.yield(other, 100) == nil
+    Task.shutdown(other, :brutal_kill)
+  end
+
+  test "the runner reports a check that dies, and goes on" do
+    assert {:error, "the checker failed: " <> _} = Web.Runner.run(fn -> exit(:boom) end)
+    assert {:ok, 42} = Web.Runner.run(fn -> 42 end)
+  end
+
   test "a request without source" do
     assert call(:post, "/check", %{program: "x"}).status == 400
   end

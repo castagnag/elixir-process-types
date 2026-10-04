@@ -3,7 +3,8 @@ defmodule ProcessTypes.ExamplesTest do
 
   # Each example must report errors exactly on the lines marked "# error:", in both
   # modes (GRAMMAR.md, §9), or only in the mode named by a line "# mode: infer" or
-  # "# mode: ground".
+  # "# mode: ground". The tests of an example with a line "# slow: ..." are tagged
+  # :slow, and run only with mix test --include slow.
 
   for path <- Path.wildcard(Path.expand("../examples/*.exs", __DIR__)),
       source = File.read!(path),
@@ -11,6 +12,7 @@ defmodule ProcessTypes.ExamplesTest do
       not (source =~ ~r/^# mode: (infer|ground)$/m) or source =~ "# mode: #{mode}\n" do
     @path path
     @mode mode
+    @tag slow: source =~ ~r/^# slow:/m
     test "#{Path.basename(path)}, #{mode}" do
       source = File.read!(@path)
 

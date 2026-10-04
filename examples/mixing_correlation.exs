@@ -5,7 +5,7 @@
 # Expected: rejected (no arrow of M.f applies to 42 at [:b, :b]).
 
 defmodule M do
-  $ (integer() -> pid(:a))@[:a, :a] and (boolean() -> pid(:b))@[:b, :b]
+  $ (integer() -> pid(:a)) @ :a and (boolean() -> pid(:b)) @ :b
   def f(_), do: self()
 end
 

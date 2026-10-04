@@ -5,20 +5,20 @@ defmodule ProcessTypes.Web do
       GET  /          the page
       GET  /examples  the programs of examples/, as [{"name", "source"}]
       GET  /docs      README.md and GRAMMAR.md, as [{"name", "source"}]
-      POST /check     {"source": ..., "mode": "infer" | "ground"}, answered by {"ok",
-                      "diagnostics", "functions", "main"} or {"error"}; the mode is
-                      inference by default (GRAMMAR.md, §9)
+      POST /check     {"source": ..., "mode": "infer" | "ground", "client": ...},
+                      answered by {"ok", "diagnostics", "functions", "main"} or
+                      {"error"}; the mode is inference by default (GRAMMAR.md, §9), and
+                      a check interrupts the previous one of the same "client"
 
-  `mix playground` serves it on localhost. A check runs with a time limit, and the
-  answers carry CORS headers, so that the page may also be served from elsewhere,
-  with its `PLAYGROUND_API` pointing here.
+  `mix playground` serves it on localhost. Checks run with limits of time and memory
+  (`ProcessTypes.Web.Runner`), and the answers carry CORS headers, so that the page may
+  also be served from elsewhere, with its `PLAYGROUND_API` pointing here.
   """
 
   use Plug.Router
 
   @root Path.expand("../..", __DIR__)
   @examples Path.join(@root, "examples")
-  @timeout 45_000
 
   plug :cors
   plug :match
@@ -41,11 +41,9 @@ defmodule ProcessTypes.Web do
 
   post "/check" do
     case conn.body_params do
-      %{"source" => source, "mode" => "ground"} when is_binary(source) ->
-        json(conn, 200, check(source, mode: :ground))
-
-      %{"source" => source} when is_binary(source) ->
-        json(conn, 200, check(source))
+      %{"source" => source} = params when is_binary(source) ->
+        mode = if params["mode"] == "ground", do: :ground, else: :infer
+        json(conn, 200, check(source, mode: mode, client: params["client"]))
 
       _ ->
         json(conn, 400, %{error: ~s(expected {"source": "..."})})
@@ -60,24 +58,28 @@ defmodule ProcessTypes.Web do
     send_resp(conn, 404, "not found")
   end
 
-  @doc "Checks a program within the time limit; the result is ready for JSON."
+  @doc """
+  Checks a program within the limits of `ProcessTypes.Web.Runner`; the result is ready
+  for JSON. The option `client` names the requester, whose previous check, if still
+  running, is interrupted; the other options are those of `ProcessTypes.check_string/2`.
+  """
   def check(source, opts \\ []) do
-    # Encoding prints types, so it runs in the task: recursive nodes are local to the
-    # process that built them (lib/vendor/README.md, patch 07).
-    task =
-      Task.async(fn ->
-        try do
-          {:ok, source |> ProcessTypes.check_string(opts) |> encode()}
-        catch
-          kind, reason -> {:crash, Exception.format_banner(kind, reason)}
-        end
-      end)
+    {client, opts} = Keyword.pop(opts, :client)
 
-    case Task.yield(task, @timeout) || Task.shutdown(task, :brutal_kill) do
+    # Encoding prints types, so it runs in the checking process: recursive nodes are
+    # local to the process that built them (lib/vendor/README.md, patch 07).
+    run = fn ->
+      try do
+        {:ok, source |> ProcessTypes.check_string(opts) |> encode()}
+      catch
+        kind, reason -> {:crash, Exception.format_banner(kind, reason)}
+      end
+    end
+
+    case ProcessTypes.Web.Runner.run(run, client) do
       {:ok, {:ok, json}} -> json
       {:ok, {:crash, message}} -> %{error: "the checker failed: " <> message}
-      {:exit, reason} -> %{error: "the checker failed: #{inspect(reason)}"}
-      nil -> %{error: "the check takes more than #{div(@timeout, 1000)} seconds"}
+      {:error, message} -> %{error: message}
     end
   end
 
@@ -90,13 +92,21 @@ defmodule ProcessTypes.Web do
     }
   end
 
-  # The examples, the running example of Section 2 first.
+  # The examples, named after their file unless @titles names them otherwise; the
+  # running example of Section 2 first, then the files of @titles.
+  @titles [{"dispatcher_undecorated", "dispatcher (w/o decorations)"}]
+
   defp examples do
     @examples
     |> Path.join("*.exs")
     |> Path.wildcard()
-    |> Enum.sort_by(&{not String.ends_with?(&1, "/dispatcher.exs"), &1})
-    |> Enum.map(&%{name: Path.basename(&1, ".exs"), source: File.read!(&1)})
+    |> Enum.map(&{Path.basename(&1, ".exs"), &1})
+    |> Enum.sort_by(fn {base, _} ->
+      {base != "dispatcher", Enum.find_index(@titles, &(elem(&1, 0) == base)) || length(@titles), base}
+    end)
+    |> Enum.map(fn {base, path} ->
+      %{name: List.keyfind(@titles, base, 0, {base, base}) |> elem(1), source: File.read!(path)}
+    end)
   end
 
   defp docs do

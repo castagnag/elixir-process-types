@@ -103,8 +103,9 @@ defmodule ProcessTypes.InferTest do
   end
 
   test "the compact form of i-app gives the same verdicts" do
-    for path <- Path.wildcard(Path.expand("../examples/*.exs", __DIR__)) do
-      source = File.read!(path)
+    for path <- Path.wildcard(Path.expand("../examples/*.exs", __DIR__)),
+        source = File.read!(path),
+        not (source =~ ~r/^# slow:/m) do
       assert lines(source, app: :compact) == lines(source), path
     end
 

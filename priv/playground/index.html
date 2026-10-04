@@ -276,6 +276,8 @@
   const editor = $("editor"), code = $("code"), gutter = $("gutter"), results = $("results"),
         picker = $("examples"), status = $("status"), checkButton = $("check");
   let examples = [], timer = null, seq = 0, errorLines = new Set();
+  // Names this page to the server, which interrupts its previous check when a new one arrives.
+  const CLIENT = Math.random().toString(36).slice(2);
 
   // Highlighting: annotation lines (and their continuations) in bordeaux, as in the paper.
   const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -326,7 +328,7 @@
       const response = await fetch(API + "/check", {
         method: "POST",
         headers: {"content-type": "application/json"},
-        body: JSON.stringify({source: editor.value})
+        body: JSON.stringify({source: editor.value, client: CLIENT})
       });
       const data = await response.json();
       if (id !== seq) return;

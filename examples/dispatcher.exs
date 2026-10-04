@@ -20,14 +20,14 @@ defmodule Server do
     end
   end
 
-  $ (pid({:ready, pid(worker)}) -> none())@[worker, worker]
+  $ (pid({:ready, pid(worker)}) -> none()) @ worker
   defp serve(client) do
     send(client, {:ready, self()})
     send(self(), :bump)
     loop(0)
   end
 
-  $ (integer() -> none())@[worker, worker]
+  $ (integer() -> none()) @ worker
   defp loop(n) do
     receive do
       :bump          -> loop(n + 1)
