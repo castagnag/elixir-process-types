@@ -1,6 +1,7 @@
 defmodule ProcessTypes do
   @moduledoc """
-  A prototype type checker for Elixir processes (Sections 3–6 of the paper).
+  A prototype type checker for Elixir processes (Sections 3–6 of the paper, with the
+  inference of decorations of Section 8).
 
   The accepted language is specified in `GRAMMAR.md`, the design in `README.md`.
   `check_string/1` parses a program (`ProcessTypes.Frontend`) and checks it

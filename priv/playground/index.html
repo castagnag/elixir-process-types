@@ -218,7 +218,7 @@
 <header>
   <div>
     <h1>Process types playground</h1>
-    <p>Type-checks the Elixir fragment of Sections 3–6 of the paper, with explicit decorations.</p>
+    <p>Type-checks the Elixir fragment of Sections 3–6 of the paper; decorations are optional, and inferred as in Section 8.</p>
   </div>
   <div class="controls">
     <select id="examples" aria-label="Load an example">
@@ -256,13 +256,14 @@
         <tr><td><code>$ L</code></td><td>before a <code>def</code> or an <code>fn</code>: its type, an intersection of arrows</td></tr>
         <tr><td><code>$interface T</code></td><td>before a <code>spawn</code>: the interface of the spawned process</td></tr>
         <tr><td><code>$self_interface T</code></td><td>the interface of the main process (default <code>term()</code>)</td></tr>
-        <tr><td><code>$type name = T</code></td><td>a type definition, not recursive</td></tr>
-        <tr><td><code>(s, … -> t)@[o, i]</code></td><td>an arrow typed at the bracket [o, i]: in its body <code>self()</code> has type <code>pid(o)</code> and <code>receive</code> reads at <code>i</code>; without <code>@[…]</code>, the bracket is <code>[none(), term()]</code></td></tr>
+        <tr><td><code>$type name = T</code></td><td>a type definition, possibly recursive (if contractive)</td></tr>
+        <tr><td><code>(s, … -> t)@[o, i]</code></td><td>an arrow typed at the bracket [o, i]: in its body <code>self()</code> has type <code>pid(o)</code> and <code>receive</code> reads at <code>i</code>; without <code>@[…]</code>, the decorations are inferred</td></tr>
         <tr><td><code>(s, … -> t) @ u</code></td><td>the arrow <code>(s, … -> t)@[u, u]</code>; write <code>@ (u₁ or u₂)</code> for a union</td></tr>
         <tr><td><code>pid(T)</code>, <code>pid()</code>, <code>fun()</code></td><td>pid types, the top process type, the top function type</td></tr>
         <tr><td><code>:a</code>, <code>{T, …}</code>, <code>integer()</code>, …</td><td>as in Elixir, with <code>or</code>, <code>and</code>, <code>not</code></td></tr>
         <tr><td><code>x when is_integer(x)</code></td><td>guards are type tests on variables</td></tr>
-        <tr><td><code>fn -> … end</code></td><td>unannotated, takes its bracket from the expected type</td></tr>
+        <tr><td><code>fn -> … end</code></td><td>unannotated: its decorations are inferred</td></tr>
+        <tr><td>removing decorations</td><td>may make checking much slower, or keep it from finishing: see the comments of the dispatcher example</td></tr>
         <tr><td>Ctrl/⌘ + Enter</td><td>check now; checks also run as you type</td></tr>
       </table>
     </details>

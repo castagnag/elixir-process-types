@@ -1,6 +1,6 @@
 # Section 2: the client sends that the worker's interface rejects: two messages,
 # and two jobs that overstep, one on the write side and one on the read side.
-# The Server module is the one of dispatcher.exs.
+# The Server module is the one of dispatcher.exs (see there the cost of removing decorations).
 # Expected: rejected, with one error on each line marked "error:".
 
 defmodule Server do

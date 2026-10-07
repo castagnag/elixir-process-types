@@ -1,10 +1,14 @@
 # Section 2: a dispatcher spawns one counter worker per client; workers also
-# run jobs (closures) that clients send them. Decorations are explicit.
+# run jobs (closures) that clients send them. Every decoration is written. All are
+# optional, since inference finds them, but removing some of them is costly: see the
+# comments on job and loop, and dispatcher_undecorated.exs.
 # Expected: accepted.
 
 defmodule Server do
   # A job may send job_writes to the process that runs it, and read there the messages
   # of worker, as the paper infers: job and worker are defined by mutual recursion.
+  # Written $type job = (-> term()), inference finds these decorations, but checking
+  # takes about 30 s instead of half a second.
   $type job_writes = :bump or {:work_add, integer()}
   $type job        = (-> term())@[job_writes, worker]
   $type worker     = :bump or {:work_add, integer()} or {:total, pid({:total, integer()})}
@@ -27,6 +31,11 @@ defmodule Server do
     loop(0)
   end
 
+  # Without its decoration, the mailbox of loop is inferred from its use sites, in about
+  # a second while job is decorated. If job's decorations are removed too, this mailbox
+  # is the recursive type worker with unknown decorations in its job component, and
+  # inference does not finish (not within 5 minutes; the playground stops a check
+  # after 90 s).
   $ (integer() -> none()) @ worker
   defp loop(n) do
     receive do
@@ -37,7 +46,8 @@ defmodule Server do
     end
   end
 
-  # No decorations: the least arrow (integer() -> integer())@[none(), term()].
+  # No decorations: they are inferred; in ground mode this is the least arrow
+  # (integer() -> integer())@[none(), term()].
   $ integer() -> integer()
   defp work(k), do: k * k
 end

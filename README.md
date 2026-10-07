@@ -1,7 +1,8 @@
 # elixir-process-types
 
 A prototype type checker for Elixir processes. It implements the type system of
-Sections 3–6 of the accompanying paper on set-theoretic types for Elixir actors:
+Sections 3–6 of the accompanying paper on set-theoretic types for Elixir actors, and
+the inference of decorations of Section 8:
 a process is typed `pid(t)`, where `t` is the type of the messages it accepts, and
 an arrow carries the mailbox decorations of the process that runs it, written
 `(s -> t)@[o, i]`, or `(s -> t) @ u` when both are u. Programs are type-checked, never
@@ -11,6 +12,15 @@ By default the decorations that annotations do not write are inferred, as in
 Section 8 of the paper: they get type variables, and the constraints that the rules
 generate are solved by tallying. In ground mode (`--ground`) an undecorated arrow is
 read as `@[none(), term()]` and every constraint is checked at once (GRAMMAR.md, §9).
+
+Decorations are therefore optional, but the cost of inference depends on which ones
+are omitted. On the dispatcher of Section 2 ([examples/dispatcher.exs](examples/dispatcher.exs)),
+checking takes half a second with every decoration written, about 30 s without those
+of the job type, about a second without the one of the recursive receive loop `loop`,
+and does not finish (not within 5 minutes) without both: loop's mailbox is then the
+recursive type `worker` with unknown decorations in its job component. The comments
+of that file and of [examples/dispatcher_undecorated.exs](examples/dispatcher_undecorated.exs)
+say which decorations can be removed.
 
 **Status:** work in progress. The checker implements Sections 3–6, and the inference of
 Section 8, on the language specified in [GRAMMAR.md](GRAMMAR.md), which also lists the

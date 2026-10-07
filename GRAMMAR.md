@@ -19,8 +19,8 @@ Elixir syntax. The files in [examples/](examples/) are written in this language.
 
 ## 1. Annotation lines
 
-A line whose first non-blank character is `$` is an annotation line. There are four
-forms:
+A line whose first non-blank character is `$` is an annotation line. Let `T` and `L` be defined as in §5.1, there are four
+forms of annotations:
 
 | form | declares | attaches to |
 |---|---|---|
@@ -196,7 +196,7 @@ recursive type of the paper.
   the other components), to the branches of `case` and `receive`, and to the last
   statement of a block. For instance, in `send(w, {:run, fn -> send(self(), :bump) end})`
   with `w : pid(worker)`, the expected type of the closure is `job`, so its body is
-  typed at `job`'s bracket `[:bump, term()]`.
+  typed at `job`'s bracket `[job_writes, worker]`.
 - The main process has the interface declared by `$self_interface`, or `term()` if
   there is none (the defensive reading of Section 11.2).
 
@@ -248,7 +248,10 @@ after`; `cond`, `with`, `for`, `try` and `unless`; captures `&f/1`; default argu
   checked at once. The others are solved together at the end, by tallying, and the
   program is accepted if they have a solution. If they have none, the errors are
   reported at the constraints that make them unsatisfiable, taken in the order in which
-  the rules generate them.
+  the rules generate them. Decorations may thus be omitted anywhere, but the time of
+  inference depends on which ones are: inferring a recursive mailbox type whose
+  components have unknown decorations may not finish (see the comments of
+  `examples/dispatcher.exs`).
 - **Ground** (`mix typecheck --ground`) knows every decoration: an undecorated arrow is
   `@[none(), term()]`, an unannotated `fn` runs at the bracket of its expected type
   (§6), and the body of a `spawn` with interface t, like the main process, runs at
