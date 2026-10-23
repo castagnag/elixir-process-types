@@ -94,7 +94,10 @@ defmodule ProcessTypes.Web do
 
   # The examples, named after their file unless @titles names them otherwise; the
   # running example of Section 2 first, then the files of @titles.
-  @titles [{"dispatcher_undecorated", "dispatcher (w/o decorations)"}]
+  @titles [
+    {"dispatcher_undecorated", "dispatcher (w/o decorations)"},
+    {"rpc", "Remote Procedure Call"}
+  ]
 
   defp examples do
     @examples

@@ -25,6 +25,7 @@ defmodule ProcessTypes.WebTest do
     assert conn.status == 200
     [first | _] = examples = JSON.decode!(conn.resp_body)
     assert first["name"] == "dispatcher"
+    assert "Remote Procedure Call" in Enum.map(examples, & &1["name"])
     assert "mixing_write" in Enum.map(examples, & &1["name"])
   end
 
