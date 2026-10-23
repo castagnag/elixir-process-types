@@ -8,7 +8,7 @@ defmodule RPC do
   $type upper_bound = response or not({:response, not(integer())})
   $type request = {:request, pid(response)}
 
-  $ (pid(request) -> integer())@[lower_bound, upper_bound] # can be removed (3 times slower)
+  $ (pid(request) -> integer())@[lower_bound, upper_bound] # removable decoration (3 times slower)
   def remote_procedure_call(server) do
     send(server, {:request, self()})
     receive do
@@ -23,7 +23,7 @@ $self_interface RPC.upper_bound
 # keeps to job_msg: its decorations are [job_msg, job_msg], and the process spawned
 # for it has the interface job_msg.
 $type job_msg = :tick or {:count, integer()}
-$type job = (-> term()) @ job_msg               # 3 seconds with the annotation removed
+$type job = (-> term()) @ job_msg                          # removable decoration (3 seconds slower)
 $type spawn_request = {:spawn, job, pid(pid(job_msg))}
 $interface RPC.request or spawn_request
 server = spawn(fn ->
