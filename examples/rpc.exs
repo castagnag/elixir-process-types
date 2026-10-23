@@ -50,18 +50,3 @@ send(server, {:spawn, fn ->
                    {:count, n} -> n + 1
                  end
                end, self()})
-
-# ERRORS
-send(server, {:spawn, fn -> send(self(), :tock) end, self()})   # error: a job writes only job_msg, not :tock
-send(server, {:request, 42})                                    # error: a request must carry a pid(response), not an integer
-send(server, {:response, 42})                                   # error: the server accepts requests, not responses
-
-RPC.remote_procedure_call(42)                                   # error: the argument must be a pid(request), not an integer
-not RPC.remote_procedure_call(server)                           # error: the call returns an integer, and `not` accepts only booleans
-
-$interface :ping
-pinger = spawn(fn -> receive do :ping -> :ok end end)
-RPC.remote_procedure_call(pinger)                               # error: pinger accepts :ping, not requests
-
-$interface :ping
-caller = spawn(fn -> RPC.remote_procedure_call(server) end)     # error: caller's mailbox cannot receive the :response

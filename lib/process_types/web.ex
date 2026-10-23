@@ -96,7 +96,9 @@ defmodule ProcessTypes.Web do
   # running example of Section 2 first, then the files of @titles.
   @titles [
     {"dispatcher_undecorated", "dispatcher (w/o decorations)"},
-    {"rpc", "Remote Procedure Call"}
+    {"dispatcher_errors", "dispatcher (errors)"},
+    {"rpc", "Remote Procedure Call"},
+    {"rpc_errors", "Remote Procedure Call (errors)"}
   ]
 
   defp examples do
