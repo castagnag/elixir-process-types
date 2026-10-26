@@ -1,7 +1,7 @@
-# Section 2, the program of dispatcher.exs with only loop decorated: inference finds
-# the decorations of job, dispatcher and serve, in about a second. Without the
-# decoration of loop, the mailbox of loop (the recursive type worker) must be found
-# from its use sites, and inference does not finish (not within 2 minutes).
+# Section 2, the program of dispatcher.exs without any decoration: inference finds
+# those of job, dispatcher, serve and loop, in under a second. The mailbox of loop,
+# the recursive type worker whose job component has unknown decorations, is found
+# from its use sites.
 # Expected: accepted, in inference mode (in ground mode, undecorated arrows are the
 # least ones, and the program is rejected).
 # mode: infer
@@ -28,7 +28,7 @@ defmodule Server do
     loop(0)
   end
 
-  $ (integer() -> none()) @ worker
+  $ (integer() -> none())
   defp loop(n) do
     receive do
       :bump          -> loop(n + 1)

@@ -116,7 +116,7 @@ defmodule ProcessTypes.InferTest do
 
   test "eliminating variables and searching for one solution give the same verdicts" do
     # The examples, except dispatcher_undecorated, on which tallying all the solutions
-    # of all the variables takes 30 to 50 s.
+    # of all the variables takes too long (30 to 50 s already when loop was decorated).
     for path <- Path.wildcard(Path.expand("../examples/*.exs", __DIR__)),
         Path.basename(path) != "dispatcher_undecorated.exs",
         source = File.read!(path) do
@@ -178,6 +178,57 @@ defmodule ProcessTypes.InferTest do
   test "run_job shared by two runners: rejected with one arrow, accepted with two" do
     assert lines(run_job("(-> term())")) == [19]
     assert lines(run_job("(-> term()) and (-> term())")) == []
+  end
+
+  # Two runners of the same kind share one undecorated run_job: the solution is a
+  # system of mutually recursive types. Solved one equation after the other (before
+  # patch 09), the check took more than 100 s.
+  @tag timeout: 30_000
+  test "run_job shared by two runners of the same kind, undecorated" do
+    program = """
+    $interface {:run, (-> term())} or {:add, integer()}
+    w = spawn(fn -> R.run_job() end)
+    send(w, {:run, fn ->
+      receive do
+        {:add, n} -> div(n, 2)
+      end
+    end})
+    """
+
+    [module, _] = String.split(run_job("(-> term())"), "\n\n", parts: 2)
+    assert lines(Enum.join([module, program, program], "\n")) == []
+  end
+
+  # Removes the decorations that the dispatcher examples write: those of the job type
+  # and of the annotations of the definitions.
+  defp undecorate(source) do
+    source
+    |> String.replace("(-> term())@[job_writes, worker]", "(-> term())")
+    |> String.replace(~r/^(\s*\$ \(.*\))\s*@\s*(\w+|\[.*\])$/m, "\\1")
+  end
+
+  defp example(name), do: File.read!(Path.expand("../examples/#{name}.exs", __DIR__))
+
+  # More than 150 s each before patch 09.
+  @tag timeout: 30_000
+  test "the dispatcher without any decoration" do
+    source = undecorate(example("dispatcher"))
+    refute source =~ ~r/^\s*\$.*@/m
+    assert lines(source) == []
+  end
+
+  @tag :slow
+  @tag timeout: 60_000
+  test "the dispatcher with errors without any decoration" do
+    source = undecorate(example("dispatcher_errors"))
+    refute source =~ ~r/^\s*\$.*@/m
+
+    marked =
+      for {line, k} <- source |> String.split("\n") |> Enum.with_index(1),
+          line =~ "# error:",
+          do: k
+
+    assert lines(source) == marked
   end
 
   test "the constraints can be inspected without solving them" do

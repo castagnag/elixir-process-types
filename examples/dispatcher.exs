@@ -1,17 +1,16 @@
 # Section 2: a dispatcher spawns one counter worker per client; workers also
 # run jobs (closures) that clients send them. Every decoration is written. All are
-# optional, since inference finds them: any set of them can be removed that does not
-# contain both the decorations of job and that of loop, and the check then takes from
-# a tenth of a second to about 5 s (see the comments on job and loop, and
-# dispatcher_undecorated.exs). Without both, inference does not finish.
+# optional, since inference finds them: any set of them can be removed, and the check
+# then takes from a tenth of a second to about a second (see the comments on job and
+# loop, and dispatcher_undecorated.exs, which has none).
 # Expected: accepted.
 
 defmodule Server do
   # A job may send job_writes to the process that runs it, and read there the messages
   # of worker, as the paper infers: job and worker are defined by mutual recursion.
   # Written $type job = (-> term()), inference finds these decorations, but checking
-  # takes about 4.5 s instead of a tenth of a second (1.3 s when the decorations of
-  # dispatcher and serve are removed too).
+  # takes about a second instead of a tenth of a second (0.6 to 0.8 s when other
+  # decorations are removed too).
   $type job_writes = :bump or {:work_add, integer()}
   $type job        = (-> term())@[job_writes, worker]
   $type worker     = :bump or {:work_add, integer()} or {:total, pid({:total, integer()})}
@@ -37,10 +36,9 @@ defmodule Server do
   # Without its decoration, the mailbox of loop is inferred from its use sites, in a
   # tenth of a second while job is decorated. If job's decorations are removed too,
   # this mailbox is the recursive type worker with unknown decorations in its job
-  # component, and inference does not finish, whatever other decorations are written
-  # (not within 2 minutes; the playground stops a check after 90 s): building the
-  # solution of the constraints, once they are saturated, is what does not finish
-  # (_claude/INFERENCE-SCALING.md of the paper).
+  # component, and the check takes 0.6 to 0.8 s: the solution is then a system of
+  # mutually recursive types (lib/vendor/README.md, patch 09; without that patch,
+  # building it did not finish).
   $ (integer() -> none()) @ worker
   defp loop(n) do
     receive do

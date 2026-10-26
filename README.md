@@ -17,15 +17,14 @@ Decorations are therefore optional, but the cost of inference depends on which o
 are omitted. Before tallying, the variables that only bare bounds constrain (such as
 the components of tuple patterns) are replaced by their bounds, which preserves
 satisfiability, and tallying searches for one solution instead of all of them
-(`ProcessTypes.Eliminate`, `lib/vendor/README.md`, patch 08). On the dispatcher of
-Section 2 ([examples/dispatcher.exs](examples/dispatcher.exs)), checking takes a
-fraction of a second with every decoration written or without the one of the
-recursive receive loop `loop`, about 4 s without those of the job type, and does not
-finish (not within 2 minutes) without both: loop's mailbox is then the recursive type
-`worker` with unknown decorations in its job component, and building the solution of
-the saturated constraints does not finish. The comments of that file and of
-[examples/dispatcher_undecorated.exs](examples/dispatcher_undecorated.exs) say which
-decorations can be removed.
+(`ProcessTypes.Eliminate`, `lib/vendor/README.md`, patch 08); the solution is built as
+one system of mutually recursive types (patch 09). On the dispatcher of Section 2
+([examples/dispatcher.exs](examples/dispatcher.exs)), any set of decorations can be
+removed: checking takes a tenth of a second while the decorations of the job type are
+written, and about a second without them, also without any decoration
+([examples/dispatcher_undecorated.exs](examples/dispatcher_undecorated.exs)). Locating
+errors costs more: on [examples/dispatcher_errors.exs](examples/dispatcher_errors.exs),
+9 to 15 s without the decorations of the job type.
 
 **Status:** work in progress. The checker implements Sections 3–6, and the inference of
 Section 8, on the language specified in [GRAMMAR.md](GRAMMAR.md), which also lists the

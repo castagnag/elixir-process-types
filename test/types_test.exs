@@ -326,5 +326,17 @@ defmodule ProcessTypes.TypesTest do
       assert to_string(me) == "rec me. pid(me)"
       assert to_string(tuple([me])) == "{rec me. pid(me)}"
     end
+
+    test "equivalent recursive nodes are merged (patch 10)" do
+      me = rec(%{me: "pid(me)"}, :me)
+      n = recursive(%{n: fn _recur -> pid(me) end}) |> Map.fetch!(:n)
+      assert to_string(n) == "pid(rec me. pid(me))"
+      assert to_string(factorize(n)) == "rec n. pid(n)"
+      assert equal?(factorize(n), n)
+
+      # Nothing to merge: the type is returned as it is.
+      assert factorize(me) == me
+      assert factorize(tuple([me])) == tuple([me])
+    end
   end
 end

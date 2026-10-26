@@ -3,7 +3,8 @@ defmodule ProcessTypes.Printer do
   Printing types with the names that `$type` defines.
 
   A type is read back from Descr into the syntax of annotations
-  (`ProcessTypes.Types.to_syntax/1`). Then every compound subterm that denotes the same
+  (`ProcessTypes.Types.to_syntax/1`), after its equivalent recursive nodes are merged
+  (`ProcessTypes.Types.factorize/1`). Then every compound subterm that denotes the same
   type as a defined name is printed as that name, and in a union a name also replaces
   the disjuncts whose union it denotes; larger names are tried first. Singleton types
   and built-in types are never renamed.
@@ -42,7 +43,7 @@ defmodule ProcessTypes.Printer do
 
   @doc "The type `t` in the syntax of annotations, with the given names."
   def to_string(t, names \\ []),
-    do: t |> Types.to_syntax() |> rename(names) |> TypeSyntax.to_string()
+    do: t |> Types.factorize() |> Types.to_syntax() |> rename(names) |> TypeSyntax.to_string()
 
   defp rename(tree, []), do: tree
 

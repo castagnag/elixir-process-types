@@ -101,6 +101,32 @@ applies the patches of `scripts/descr_patches/`, in order:
    disagree (they agree on every example and test). Without it,
    the families of alternatives grow exponentially on decoration inference
    (`_claude/INFERENCE-SCALING.md` of the paper).
+9. `09-solve-as-system.patch`, ours, not reported: the solve phase of tallying builds
+   the solution as one system of mutually recursive nodes. A saturated set gives one
+   equation per variable, α = (lower ∨ α′) ∧ upper with α′ fresh. `solve/1` solved them
+   one after the other, substituting each recursive solution into the others and back,
+   which gave nests of recursive systems. Now one `recursive/1` system has a node per
+   variable whose equation mentions a variable of the set. In each body, one structural
+   substitution replaces every variable of the set by its node (or by its solution, when
+   its equation mentions none) and every α′ by α. In a normalized set the bounds of α
+   have only larger variables at the top level (normalization keeps the least variable
+   of each line), so the nodes are well defined. The sequential solve is kept for the
+   case where top-level occurrences form a cycle (never met: 571 solves over the test
+   suite, none cyclic). The fallback now renames without simplifying, and
+   `solve_recursive_equation/2` uses `syntactic_vars/1` instead of `vars/1`. Without the
+   patch, emptiness checks, simplification and printing of the nested solutions blew up:
+   two runners of the same kind sharing an undecorated `run_job` took more than 100 s,
+   and the fully undecorated dispatcher did not finish (1.6 s with the patch).
+10. `10-factorize.patch`, ours, not reported: `factorize/1` merges the equivalent
+    recursive nodes of a type, as `factorize` in SSTT (Laurent and Nguyen, "Implementing
+    Set-Theoretic Types"). Every node reachable from the type is mapped to the first node
+    equivalent to it (`equal?/2`) in depth-first order, and these representatives are
+    rebuilt as one `recursive/1` system. The type is returned unchanged when no two nodes
+    are equivalent, when a node is the domain of an optional map field, and when merging
+    would put a node at the top level of its own definition. `map_nodes/2` replaces the
+    nodes that occur in a type. `ProcessTypes.Printer` factorizes before printing: the
+    main type of the undecorated dispatcher went from 47 `rec` binders (19 KB) to 2
+    (1.6 KB), at no measurable cost.
 
 Patches 02 to 07 address limits of the branch that its own tests do not exercise; they
 were reported to Guillaume Duboc, with the limits below.

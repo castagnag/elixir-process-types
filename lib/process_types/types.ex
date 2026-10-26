@@ -269,6 +269,12 @@ defmodule ProcessTypes.Types do
   """
   def to_syntax(t), do: t |> D.to_quoted() |> back(MapSet.new())
 
+  @doc """
+  `t` with its equivalent recursive nodes merged, as SSTT's `factorize` (patch 10 of
+  `lib/vendor/README.md`): an equivalent type that prints each recursive type once.
+  """
+  def factorize(t), do: D.factorize(t)
+
   defp back({:__block__, _, [x]}, b), do: back(x, b)
   defp back({:rec, _, [{x, _, nil}, body]}, b), do: rec(x, back(body, MapSet.put(b, x)))
 

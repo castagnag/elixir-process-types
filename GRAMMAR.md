@@ -251,9 +251,9 @@ after`; `cond`, `with`, `for`, `try` and `unless`; captures `&f/1`; default argu
   tallying searches for one solution, not for all of them). If they have none, the errors are
   reported at the constraints that make them unsatisfiable, taken in the order in which
   the rules generate them. Decorations may thus be omitted anywhere, but the time of
-  inference depends on which ones are: inferring a recursive mailbox type whose
-  components have unknown decorations may not finish (see the comments of
-  `examples/dispatcher.exs`).
+  inference depends on which ones are, and locating errors costs more than accepting,
+  since it solves prefixes of the constraints (see the comments of
+  `examples/dispatcher.exs` and `examples/dispatcher_errors.exs`).
 - **Ground** (`mix typecheck --ground`) knows every decoration: an undecorated arrow is
   `@[none(), term()]`, an unannotated `fn` runs at the bracket of its expected type
   (§6), and the body of a `spawn` with interface t, like the main process, runs at
