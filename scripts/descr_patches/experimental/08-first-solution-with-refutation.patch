@@ -1,0 +1,175 @@
+OURS (not proposed to Guillaume Duboc yet). Tallying for decoration inference: one
+solution instead of all (_claude/INFERENCE-SCALING.md of the paper, "first solution"
+and D2). tally_first/3 normalizes each constraint, caps the constraints whose
+normalization has a single alternative and saturates them alone, deriving only the
+induced constraints that have a single alternative (a conflict refutes the constraints
+without search; option refute: false skips this), then searches depth first, with
+backtracking, over the other alternatives and over those of propagation, and stops at
+the first saturated set that solve/1 and valid_solution?/2 accept. In theory it answers []
+exactly when tally/2 does; in practice both depend on subtype?/2, whose false negatives
+may make them disagree.
+--- a/lib/vendor/descr.ex
++++ b/lib/vendor/descr.ex
+@@ -410,6 +410,17 @@
+     ProcessTypes.Descr.Tally.tally(constraints, fixed)
+   end
+ 
++  @doc """
++  Like `tally/2`, but returns one solution only: `[substitution]`, or `[]`, in theory
++  exactly when `tally/2` does (the two may disagree where `subtype?/2` errs, see
++  `ProcessTypes.Descr.Tally.tally_first/3`). Option `refute: false` skips the
++  saturation of the constraints that have a single normal form, which refutes some
++  unsatisfiable sets without search.
++  """
++  def tally_first(constraints, fixed \\ MapSet.new(), opts \\ []) when is_list(constraints) do
++    ProcessTypes.Descr.Tally.tally_first(constraints, fixed, opts)
++  end
++
+   @doc false
+   def __tally_variable_identity__(variable), do: variable_identity(variable)
+ 
+--- a/lib/vendor/descr_tally.ex
++++ b/lib/vendor/descr_tally.ex
+@@ -82,6 +82,142 @@
+     end
+   end
+ 
++  # One solution instead of all (not in the branch). The solutions of the constraints
++  # are the union of those of the alternatives that normalization and propagation
++  # produce; tally_first/3 explores them depth first and stops at the first constraint
++  # set that solve/1 and valid_solution?/2 accept, without building the whole family.
++  # In theory it answers [] exactly when tally/2 does (normalization is sound and
++  # complete, and every saturated set has a solution); in practice both depend on
++  # solve/1 and valid_solution?/2, whose subtype?/2 has false negatives, on saturated
++  # sets that differ (no subsumption pruning here, another order), so they may
++  # disagree. The constraints whose normalization has several alternatives are
++  # explored fewest first. Before the
++  # search (option refute: true, the default), the constraints whose normalization has
++  # a single alternative are capped and saturated alone, deriving only the induced
++  # constraints that have a single alternative too: such an alternative is equivalent to
++  # its constraint, so whatever is derived is implied, and a conflict refutes the
++  # constraints without search.
++  def tally_first(constraints, fixed, opts) when is_list(constraints) do
++    fixed = normalize_fixed(fixed)
++    constraints = validate_constraints!(constraints)
++
++    state = %{
++      fixed: fixed,
++      fixed_identities: MapSet.new(fixed, &variable_identity!/1),
++      memo: :ets.new(:descr_tally_memo, [:set, :private])
++    }
++
++    try do
++      alternatives =
++        Enum.map(constraints, fn {left, right} ->
++          normalize(Descr.difference(left, right), state)
++        end)
++
++      if css_empty() in alternatives do
++        []
++      else
++        {units, choices} = Enum.split_with(alternatives, &match?([_], &1))
++        root = Enum.reduce(units, cs_any(), fn [cs], acc -> cs_cap(acc, cs, state) end)
++        root = if Keyword.get(opts, :refute, true), do: unit_saturate(root, state), else: root
++
++        case search(root, Enum.sort_by(choices, &length/1), constraints, state) do
++          {:ok, substitution} -> [substitution]
++          :error -> []
++        end
++      end
++    catch
++      :tally_unsatisfiable -> []
++    after
++      :ets.delete(state.memo)
++    end
++  end
++
++  defp search(cs, [], constraints, state) do
++    propagate_first(cs_any(), cs, MapSet.new(), state, fn saturated ->
++      with {:ok, substitution} <- solve(saturated),
++           true <- valid_solution?(substitution, constraints) do
++        {:ok, substitution}
++      else
++        _ -> :error
++      end
++    end)
++  end
++
++  defp search(cs, [alternatives | choices], constraints, state) do
++    first(alternatives, fn alternative ->
++      with {:ok, cs} <- try_cap(cs, alternative, state),
++           do: search(cs, choices, constraints, state)
++    end)
++  end
++
++  defp first(enumerable, fun) do
++    Enum.find_value(enumerable, :error, fn element ->
++      case fun.(element) do
++        {:ok, _} = found -> found
++        :error -> nil
++      end
++    end)
++  end
++
++  defp try_cap(left, right, state) do
++    {:ok, cs_cap(left, right, state)}
++  catch
++    :tally_unsatisfiable -> :error
++  end
++
++  defp try_add(constraint, constraints, state) do
++    {:ok, cs_add(constraint, constraints, state)}
++  catch
++    :tally_unsatisfiable -> :error
++  end
++
++  # propagate/4, depth first: k receives each saturated constraint set in turn, until it
++  # returns {:ok, _}.
++  defp propagate_first(previous, [], _seen, _state, k), do: k.(previous)
++
++  defp propagate_first(previous, [constraint | rest] = current, seen, state, k) do
++    {lower, _variable, upper} = constraint
++    induced = Descr.difference(lower, upper)
++
++    if MapSet.member?(seen, induced) do
++      with {:ok, previous} <- try_add(constraint, previous, state),
++           do: propagate_first(previous, rest, seen, state, k)
++    else
++      with {:ok, combined} <- try_cap(previous, current, state) do
++        seen = MapSet.put(seen, induced)
++
++        [combined]
++        |> css_cap(normalize(induced, state), state)
++        |> first(&propagate_first(cs_any(), &1, seen, state, k))
++      end
++    end
++  end
++
++  # propagate/4 restricted to the induced constraints whose normalization, with the
++  # constraints derived so far, has a single alternative; the others are skipped. Throws
++  # :tally_unsatisfiable on a conflict.
++  defp unit_saturate(constraints, state), do: unit_saturate(cs_any(), constraints, MapSet.new(), state)
++
++  defp unit_saturate(previous, [], _seen, _state), do: previous
++
++  defp unit_saturate(previous, [constraint | rest] = current, seen, state) do
++    {lower, _variable, upper} = constraint
++    induced = Descr.difference(lower, upper)
++
++    alternatives =
++      if MapSet.member?(seen, induced),
++        do: :seen,
++        else: css_cap([cs_cap(previous, current, state)], normalize(induced, state), state)
++
++    seen = MapSet.put(seen, induced)
++
++    case alternatives do
++      [] -> throw(:tally_unsatisfiable)
++      [constraints] -> unit_saturate(cs_any(), constraints, seen, state)
++      _ -> unit_saturate(cs_add(constraint, previous, state), rest, seen, state)
++    end
++  end
++
+   defp normalize_fixed(%MapSet{} = fixed), do: validate_fixed!(fixed)
+   defp normalize_fixed(fixed) when is_list(fixed), do: fixed |> MapSet.new() |> validate_fixed!()
+ 

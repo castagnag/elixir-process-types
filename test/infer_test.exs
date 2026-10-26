@@ -102,16 +102,82 @@ defmodule ProcessTypes.InferTest do
     end
   end
 
-  test "the compact form of i-app gives the same verdicts" do
+  test "the literal form of i-app, with fresh decorations, gives the same verdicts" do
     for path <- Path.wildcard(Path.expand("../examples/*.exs", __DIR__)),
         source = File.read!(path),
         not (source =~ ~r/^# slow:/m) do
-      assert lines(source, app: :compact) == lines(source), path
+      assert lines(source, app: :literal) == lines(source), path
     end
 
     for interfaces <- [["{:half, integer()}"], ["{:half, term()}"]] do
-      assert lines(halve(interfaces), app: :compact) == lines(halve(interfaces))
+      assert lines(halve(interfaces), app: :literal) == lines(halve(interfaces))
     end
+  end
+
+  test "eliminating variables and searching for one solution give the same verdicts" do
+    # The examples, except dispatcher_undecorated, on which tallying all the solutions
+    # of all the variables takes 30 to 50 s.
+    for path <- Path.wildcard(Path.expand("../examples/*.exs", __DIR__)),
+        Path.basename(path) != "dispatcher_undecorated.exs",
+        source = File.read!(path) do
+      assert lines(source, eliminate: false, tally: :all) == lines(source), path
+      assert lines(source, eliminate: false) == lines(source), path
+    end
+  end
+
+  test "messages show the least solution of the variables they print, not their bound" do
+    # The projection x, and the result of f.(), are bounded only through the failing
+    # constraint: eliminated in the prefix that localization solves, they would be
+    # printed as term().
+    half = """
+    $interface {:half, atom()}
+    spawn(fn -> receive do
+        {:half, x} -> x + 1
+      end
+    end)
+    """
+
+    app = "f = fn -> :a end\nf.() + 1\n"
+
+    for {source, shown} <- [{half, "atom()"}, {app, ":a"}] do
+      assert [d] = check(source).diagnostics
+      assert d.message == "the left operand of + has type #{shown}, not integer()"
+    end
+  end
+
+  # Section 8.3: one undecorated run_job shared by two runners whose :add payloads
+  # differ. With one arrow its input decoration must bracket both interfaces, and the
+  # job sent to the first runner cannot run at it; with two arrows each runner has its
+  # own. Each check took more than 150 s before elimination and the search for one
+  # solution.
+  defp run_job(annotation) do
+    """
+    defmodule R do
+      $ #{annotation}
+      def run_job() do
+        receive do
+          {:run, job} -> job.()
+        end
+      end
+    end
+
+    $interface {:run, (-> term())} or {:add, integer()}
+    w = spawn(fn -> R.run_job() end)
+    send(w, {:run, fn ->
+      receive do
+        {:add, n} -> div(n, 2)
+      end
+    end})
+
+    $interface {:run, (-> term())} or {:add, term()}
+    spawn(fn -> R.run_job() end)
+    """
+  end
+
+  @tag timeout: 30_000
+  test "run_job shared by two runners: rejected with one arrow, accepted with two" do
+    assert lines(run_job("(-> term())")) == [19]
+    assert lines(run_job("(-> term()) and (-> term())")) == []
   end
 
   test "the constraints can be inspected without solving them" do

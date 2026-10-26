@@ -1,6 +1,9 @@
 # Section 2: the client sends that the worker's interface rejects: two messages,
 # and two jobs that overstep, one on the write side and one on the read side.
-# The Server module is the one of dispatcher.exs (see there the cost of removing decorations).
+# The Server module is the one of dispatcher.exs (see there which decorations can be
+# removed). Here the errors must also be located, which costs more: without the
+# decorations of job, the check takes 8 to 12 s instead of a third of a second; without
+# those of job and loop, it does not finish.
 # Expected: rejected, with one error on each line marked "error:".
 
 defmodule Server do

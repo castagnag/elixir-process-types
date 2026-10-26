@@ -14,13 +14,18 @@ generate are solved by tallying. In ground mode (`--ground`) an undecorated arro
 read as `@[none(), term()]` and every constraint is checked at once (GRAMMAR.md, §9).
 
 Decorations are therefore optional, but the cost of inference depends on which ones
-are omitted. On the dispatcher of Section 2 ([examples/dispatcher.exs](examples/dispatcher.exs)),
-checking takes half a second with every decoration written, about 30 s without those
-of the job type, about a second without the one of the recursive receive loop `loop`,
-and does not finish (not within 5 minutes) without both: loop's mailbox is then the
-recursive type `worker` with unknown decorations in its job component. The comments
-of that file and of [examples/dispatcher_undecorated.exs](examples/dispatcher_undecorated.exs)
-say which decorations can be removed.
+are omitted. Before tallying, the variables that only bare bounds constrain (such as
+the components of tuple patterns) are replaced by their bounds, which preserves
+satisfiability, and tallying searches for one solution instead of all of them
+(`ProcessTypes.Eliminate`, `lib/vendor/README.md`, patch 08). On the dispatcher of
+Section 2 ([examples/dispatcher.exs](examples/dispatcher.exs)), checking takes a
+fraction of a second with every decoration written or without the one of the
+recursive receive loop `loop`, about 4 s without those of the job type, and does not
+finish (not within 2 minutes) without both: loop's mailbox is then the recursive type
+`worker` with unknown decorations in its job component, and building the solution of
+the saturated constraints does not finish. The comments of that file and of
+[examples/dispatcher_undecorated.exs](examples/dispatcher_undecorated.exs) say which
+decorations can be removed.
 
 **Status:** work in progress. The checker implements Sections 3–6, and the inference of
 Section 8, on the language specified in [GRAMMAR.md](GRAMMAR.md), which also lists the

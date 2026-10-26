@@ -82,6 +82,7 @@ defmodule ProcessTypes.Types do
   defdelegate empty?(t), to: D
 
   def union_all(types), do: Enum.reduce(types, none(), &union(&2, &1))
+  def intersection_all(types), do: Enum.reduce(types, term(), &intersection(&2, &1))
 
   # Type variables and tallying (Section 8 of the paper)
 
@@ -115,6 +116,13 @@ defmodule ProcessTypes.Types do
   and of which every solution is an instance; `[]` when there is no solution.
   """
   def tally(constraints), do: D.tally(constraints)
+
+  @doc """
+  Like `tally/1`, but searches for one solution only: `[σ]`, or `[]`, in theory exactly
+  when `tally/1` answers `[]` (in practice the two can disagree where Descr's
+  `subtype?/2` errs).
+  """
+  def tally_first(constraints), do: D.tally_first(constraints)
 
   # Recursive types
 

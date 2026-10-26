@@ -23,13 +23,24 @@ defmodule ProcessTypes.Backend.Infer do
   most precise arrows, an input decoration bounded from above being printed as its
   bound, which is the requirement of Section 8.3.
 
-  Option `app: :compact` replaces the constraints of i-app by the single
-  f ≤ s →_o^i γ (the remark at rule i-app in the paper); the default is `:literal`.
+  Rule i-app emits the single constraint f ≤ s →_o^i γ, at the bracket [o, i] of the
+  application. Option `app: :literal` emits instead β ≤ o, i ≤ α and f ≤ s →_β^α γ for
+  fresh α and β, the form of the rule in earlier versions of the paper, which is
+  equivalent (eliminating α and β gives the single constraint back); the default is
+  `:compact`.
+
+  Every tallying call first eliminates the variables that only their bare bounds
+  constrain (`ProcessTypes.Eliminate`, which preserves satisfiability), then searches
+  for one solution of what remains (`Types.tally_first/1`), and extends it to the
+  eliminated variables. Inference only needs satisfiability and one solution: every
+  solution gives a valid typing, and the program is accepted iff there is one.
+  Options, defaults first, for comparisons: `eliminate: true | false`,
+  `tally: :first | :all`.
   """
 
   @behaviour ProcessTypes.Backend
 
-  alias ProcessTypes.{Backend.Ground, TypeGraph, Types}
+  alias ProcessTypes.{Backend.Ground, Eliminate, TypeGraph, Types}
 
   @impl true
   def new(opts) do
@@ -39,7 +50,9 @@ defmodule ProcessTypes.Backend.Infer do
       roles: %{},
       memo: %{},
       solution: %{},
-      app: Keyword.get(opts, :app, :literal)
+      app: Keyword.get(opts, :app, :compact),
+      tally:
+        Map.new([eliminate: true, tally: :first], fn {k, v} -> {k, Keyword.get(opts, k, v)} end)
     }
   end
 
@@ -69,14 +82,14 @@ defmodule ProcessTypes.Backend.Infer do
 
           st =
             st
-            |> defer(b, o, line, diagnostic)
-            |> defer(i, a, line, diagnostic)
-            |> defer(f, Types.arrow(s, b, a, g), line, diagnostic)
+            |> defer(b, o, line, diagnostic, [f, s, o, i])
+            |> defer(i, a, line, diagnostic, [f, s, o, i])
+            |> defer(f, Types.arrow(s, b, a, g), line, diagnostic, [f, s, o, i])
 
           {g, st}
 
         :compact ->
-          {g, defer(st, f, Types.arrow(s, o, i, g), line, diagnostic)}
+          {g, defer(st, f, Types.arrow(s, o, i, g), line, diagnostic, [f, s, o, i])}
       end
     end
   end
@@ -139,13 +152,18 @@ defmodule ProcessTypes.Backend.Infer do
   end
 
   @impl true
-  def finish(st) do
+  def finish(st, reported) do
+    keep =
+      reported |> Enum.map(&Types.syntactic_vars/1) |> Enum.reduce(MapSet.new(), &MapSet.union/2)
+
+    opts = Map.put(st.tally, :keep, keep)
+
     {errors, solution} =
       st.deferred
       |> Enum.reverse()
       |> components()
       |> Enum.reduce({[], %{}}, fn component, {errors, solution} ->
-        {more, sigma} = solve(component, st.roles)
+        {more, sigma} = solve(component, st.roles, opts)
         {errors ++ more, Map.merge(solution, sigma)}
       end)
 
@@ -177,43 +195,74 @@ defmodule ProcessTypes.Backend.Infer do
     |> Enum.sort_by(&hd(&1).line)
   end
 
-  defp solve(constraints, roles) do
-    case tally(constraints) do
+  defp solve(constraints, roles, opts) do
+    case tally(constraints, opts) do
       [sigma | _] -> {[], sigma}
-      [] -> localize([], constraints, [], roles)
+      [] -> localize([], constraints, [], roles, opts)
     end
   end
 
   # base has a solution, base ++ rest none.
-  defp localize(base, rest, errors, roles) do
-    case tally(base ++ rest) do
+  defp localize(base, rest, errors, roles, opts) do
+    case tally(base ++ rest, opts) do
       [sigma | _] ->
         {Enum.reverse(errors), sigma}
 
       [] ->
-        {before, [culprit | rest]} = Enum.split(rest, first_failure(base, rest))
+        {before, [culprit | rest]} = Enum.split(rest, first_failure(base, rest, opts))
         base = base ++ before
-        [sigma | _] = tally(base)
+        # The message instantiates the types that the culprit shows: their variables
+        # must keep their most precise solution, so they are not eliminated.
+        shown = culprit.shown |> Enum.map(&Types.syntactic_vars/1) |> Enum.reduce(&MapSet.union/2)
+        [sigma | _] = tally(base, %{opts | keep: MapSet.union(opts.keep, shown)})
         error = culprit.diagnostic.(instantiate(sigma, roles))
-        localize(base, rest, [error | errors], roles)
+        localize(base, rest, [error | errors], roles, opts)
     end
   end
 
   # The least k such that base followed by the first k + 1 constraints of rest has no
   # solution.
-  defp first_failure(base, rest), do: search(base, rest, 0, length(rest) - 1)
+  defp first_failure(base, rest, opts), do: search(base, rest, 0, length(rest) - 1, opts)
 
-  defp search(_base, _rest, lo, lo), do: lo
+  defp search(_base, _rest, lo, lo, _opts), do: lo
 
-  defp search(base, rest, lo, hi) do
+  defp search(base, rest, lo, hi, opts) do
     mid = div(lo + hi, 2)
 
-    if tally(base ++ Enum.take(rest, mid + 1)) == [],
-      do: search(base, rest, lo, mid),
-      else: search(base, rest, mid + 1, hi)
+    if tally(base ++ Enum.take(rest, mid + 1), opts) == [],
+      do: search(base, rest, lo, mid, opts),
+      else: search(base, rest, mid + 1, hi, opts)
   end
 
-  defp tally(constraints), do: Types.tally(Enum.map(constraints, &{&1.sub, &1.sup}))
+  defp tally(constraints, opts) do
+    constraints = Enum.map(constraints, &{&1.sub, &1.sup})
+
+    if opts.eliminate do
+      {reduced, eliminations} = Eliminate.eliminate(constraints, opts.keep)
+
+      case solutions(reduced, opts) do
+        [] ->
+          []
+
+        [sigma | _] ->
+          sigma = Eliminate.reconstruct(sigma, eliminations)
+          # A safety net: the extended solution must solve the original constraints.
+          if satisfies?(sigma, constraints), do: [sigma], else: solutions(constraints, opts)
+      end
+    else
+      solutions(constraints, opts)
+    end
+  end
+
+  defp solutions(constraints, %{tally: :first}), do: Types.tally_first(constraints)
+
+  defp solutions(constraints, %{tally: :all}), do: Types.tally(constraints)
+
+  defp satisfies?(sigma, constraints) do
+    Enum.all?(constraints, fn {s, t} ->
+      Types.subtype?(Types.substitute(s, sigma), Types.substitute(t, sigma))
+    end)
+  end
 
   defp instantiate(sigma, roles) do
     fn t ->
@@ -227,8 +276,16 @@ defmodule ProcessTypes.Backend.Infer do
 
   # State
 
-  defp defer(st, sub, sup, line, diagnostic) do
-    constraint = %{sub: sub, sup: sup, line: line, diagnostic: diagnostic}
+  # shown: the types that the diagnostic prints, when it fails.
+  defp defer(st, sub, sup, line, diagnostic, shown \\ nil) do
+    constraint = %{
+      sub: sub,
+      sup: sup,
+      line: line,
+      diagnostic: diagnostic,
+      shown: shown || [sub, sup]
+    }
+
     %{st | deferred: [constraint | st.deferred]}
   end
 

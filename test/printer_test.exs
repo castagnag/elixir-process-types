@@ -60,8 +60,15 @@ defmodule ProcessTypes.PrinterTest do
     path = Path.expand("../examples/dispatcher_errors.exs", __DIR__)
     result = ProcessTypes.check_file(path, mode: :ground)
     messages = Map.new(result.diagnostics, &{&1.line, &1.message})
-    assert messages[51] == "send: the target accepts Server.worker, not {:wrk_add, integer()}"
-    assert messages[53] == "send: the target accepts Server.job_writes, not :tick"
-    assert messages[54] == "the left operand of + has type Server.worker, not integer()"
+
+    # The lines marked "error:", in order.
+    [first, _, third, fourth] =
+      for {line, n} <- path |> File.read!() |> String.split("\n") |> Enum.with_index(1),
+          line =~ "# error:",
+          do: n
+
+    assert messages[first] == "send: the target accepts Server.worker, not {:wrk_add, integer()}"
+    assert messages[third] == "send: the target accepts Server.job_writes, not :tick"
+    assert messages[fourth] == "the left operand of + has type Server.worker, not integer()"
   end
 end

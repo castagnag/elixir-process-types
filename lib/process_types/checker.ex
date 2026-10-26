@@ -90,7 +90,7 @@ defmodule ProcessTypes.Checker do
         block(%{ctx | o: o, i: i}, st, program.main, nil)
       end
 
-    st = if Keyword.get(opts, :solve, true), do: backend.finish(st), else: st
+    st = if Keyword.get(opts, :solve, true), do: backend.finish(st, List.wrap(main)), else: st
 
     functions =
       for fun <- program.funs |> Map.values() |> Enum.sort_by(& &1.line), fun.annotation do

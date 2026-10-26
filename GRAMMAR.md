@@ -246,7 +246,9 @@ after`; `cond`, `with`, `for`, `try` and `unless`; captures `&f/1`; default argu
   t runs at fresh decorations [o, i] with o ≤ t ≤ i (rule i-spawn), and so does the
   main process, t being its `$self_interface`. A constraint without variables is
   checked at once. The others are solved together at the end, by tallying, and the
-  program is accepted if they have a solution. If they have none, the errors are
+  program is accepted if they have a solution (the variables that only bare bounds
+  constrain are first replaced by their bounds, which preserves satisfiability, and
+  tallying searches for one solution, not for all of them). If they have none, the errors are
   reported at the constraints that make them unsatisfiable, taken in the order in which
   the rules generate them. Decorations may thus be omitted anywhere, but the time of
   inference depends on which ones are: inferring a recursive mailbox type whose

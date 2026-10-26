@@ -99,8 +99,11 @@ defmodule ProcessTypes.Backend do
               diagnostic :: (inst -> Diagnostic.t())
             ) :: {{Types.t(), Types.t()}, state}
 
-  @doc "Solves what was deferred."
-  @callback finish(state) :: state
+  @doc """
+  Solves what was deferred. `reported` are the types that `instance/2` will be asked
+  for: their variables must keep their most precise solution.
+  """
+  @callback finish(state, reported :: [Types.t()]) :: state
 
   @doc "The type to report for `t` once `finish/1` has run: an instance of the solution."
   @callback instance(state, t :: Types.t()) :: Types.t()
@@ -151,7 +154,7 @@ defmodule ProcessTypes.Backend.Ground do
   def process_bracket(st, _occurrence, t, _line, _diagnostic), do: {{t, t}, st}
 
   @impl true
-  def finish(st), do: st
+  def finish(st, _reported), do: st
 
   @impl true
   def instance(_st, t), do: t

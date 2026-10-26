@@ -270,6 +270,32 @@ defmodule ProcessTypes.TypesTest do
       assert [_] = tally([{i, ia}, {union(atom([:bump]), tuple([job])), i}])
     end
 
+    @tag timeout: 5_000
+    test "tally_first answers like tally (patch 08)" do
+      i = var(:i)
+      ia = var(:ia)
+      job = arrow(tuple([]), none(), ia, term())
+
+      for constraints <- [
+            [{i, ia}, {tuple([ia]), i}],
+            [{i, ia}, {union(atom([:bump]), tuple([job])), i}],
+            [{i, ia}, {tuple([ia]), i}, {i, tuple([integer()])}],
+            [{tuple([i]), tuple([ia])}, {ia, integer()}, {atom([:a]), i}]
+          ] do
+        assert length(tally_first(constraints)) == min(length(tally(constraints)), 1)
+      end
+
+      # A chain of single-alternative constraints with a ground conflict, as for the two
+      # runners of run_job (Section 8.3).
+      chain = [
+        {tuple([atom([:add]), term()]), i},
+        {i, ia},
+        {ia, tuple([atom([:add]), integer()])}
+      ]
+
+      assert tally_first(chain) == []
+    end
+
     test "a variable intersected with a recursive type prints (patch 02)" do
       x = var(:x)
       me = recursive(%{me: fn recur -> pid(recur.(:me)) end}) |> Map.fetch!(:me)

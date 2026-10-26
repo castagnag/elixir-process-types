@@ -3,8 +3,9 @@
 # {:add, integer()}) may call counter(3); the client may call counter(:total) but not
 # counter(3). The mixed arrow (the value part of the first arrow with the mailbox part
 # of the second) is not derivable.
-# Expected: rejected on the lines marked "error:". In inference mode both decorations
-# of counter can be removed: they are inferred.
+# Expected: rejected on the lines marked "error:". In inference mode either decoration
+# of counter, or both, can be removed: they are inferred (in under a tenth of a
+# second).
 
 defmodule Counter do
   $type worker = :bump or {:add, integer()} or {:get_total, pid({:total, integer()})}

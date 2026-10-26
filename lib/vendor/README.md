@@ -87,6 +87,21 @@ applies the patches of `scripts/descr_patches/`, in order:
    nodes live in the process dictionary, a type with recursive nodes must be used in the
    process that built it. Solves limit 1 below.
 
+8. `08-first-solution.patch`, ours, not reported: `tally_first/2`, for inference, which
+   needs satisfiability and one solution, not all the principal ones. It normalizes each
+   constraint, then searches depth first, with backtracking, over the alternatives of
+   the normal forms (fewest alternatives first) and over those of propagation, and stops
+   at the first saturated set that `solve/1` and `valid_solution?/2` accept. A version
+   that first saturated the single-alternative constraints alone, to refute without
+   search, made no measurable difference and is kept in
+   `experimental/08-first-solution-with-refutation.patch` (it applies instead of this
+   one). In theory it answers `[]` exactly when `tally/2` does;
+   in practice the two reach different saturated sets, and `solve/1` and
+   `valid_solution?/2` inherit the false negatives of `subtype?/2`, so they may
+   disagree (they agree on every example and test). Without it,
+   the families of alternatives grow exponentially on decoration inference
+   (`_claude/INFERENCE-SCALING.md` of the paper).
+
 Patches 02 to 07 address limits of the branch that its own tests do not exercise; they
 were reported to Guillaume Duboc, with the limits below.
 

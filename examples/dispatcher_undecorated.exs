@@ -1,11 +1,10 @@
 # Section 2, the program of dispatcher.exs with only loop decorated: inference finds
-# the decorations of job, dispatcher and serve. Without the decoration of loop, the
-# mailbox of loop (the recursive type worker) must be found from its use sites, and
-# inference does not finish in reasonable time.
+# the decorations of job, dispatcher and serve, in about a second. Without the
+# decoration of loop, the mailbox of loop (the recursive type worker) must be found
+# from its use sites, and inference does not finish (not within 2 minutes).
 # Expected: accepted, in inference mode (in ground mode, undecorated arrows are the
 # least ones, and the program is rejected).
 # mode: infer
-# slow: inference takes 30 to 50 s (excluded from mix test unless --include slow)
 
 defmodule Server do
   $type job    = (-> term())

@@ -1,5 +1,7 @@
 # Introduction example: synchronous RPC
 # Expected: accepted; the main process returns an integer.
+# In inference mode the two decorations marked removable can be removed, one or both:
+# inference finds them (in under a tenth of a second).
 
 defmodule RPC do
   $type response = {:response, integer()}

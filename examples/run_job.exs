@@ -5,9 +5,11 @@
 # with run_job at [none(), u1]; program 2 (a runner whose :add payloads are any term)
 # with run_job at [none(), u2]. No decoration of run_job serves both: R1 below
 # rejects program 2, R2 rejects program 1.
-# Without decorations, each program alone is accepted (program 1 in about a minute,
-# program 2 in under a second); the two programs sharing one undecorated run_job
-# cannot be typed, and inference does not finish.
+# Without decorations, each program alone is accepted in under a second; the two
+# programs sharing one undecorated run_job cannot be typed, and are rejected, at the
+# spawn of the second runner, in under 2 s. With the annotation
+# (-> term()) and (-> term()), each runner has its own arrow, and the two programs
+# sharing run_job are accepted, in under a second.
 # Expected: rejected on the lines marked "error:".
 # mode: infer
 
