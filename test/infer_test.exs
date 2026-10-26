@@ -238,8 +238,7 @@ defmodule ProcessTypes.InferTest do
     assert length(result.constraints) > 0
   end
 
-  # Cases that the copied Descr could not solve before patches 06 and 07; the skipped one
-  # is still a limit (lib/vendor/README.md).
+  # Cases that the copied Descr could not solve before patches 06, 07 and 11.
   describe "pending on Descr" do
     test "the jobs of Section 2, with an undecorated job" do
       source = """
@@ -259,7 +258,6 @@ defmodule ProcessTypes.InferTest do
       assert lines(source) == [11]
     end
 
-    @tag skip: "the intersection of a recursive tuple type does not terminate"
     test "a recursive type in an undecorated annotation" do
       assert lines("""
              $type list = nil or {integer(), list}

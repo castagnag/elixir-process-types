@@ -29,14 +29,14 @@ errors costs more: on [examples/dispatcher_errors.exs](examples/dispatcher_error
 **Status:** work in progress. The checker implements Sections 3–6, and the inference of
 Section 8, on the language specified in [GRAMMAR.md](GRAMMAR.md), which also lists the
 deviation that Descr imposes (no integer singleton types); type definitions may be
-recursive. [examples/](examples/) holds the examples of Sections 2, 4.1 and 6.3 of the
-paper; the test suite checks that each reports errors exactly on the lines marked
+recursive. [examples/](examples/) holds the examples of Sections 2, 4.1, 6.3 and 8.3 of
+the paper; the test suite checks that each reports errors exactly on the lines marked
 `# error:`, in both modes. Inference handles programs whose constraints need a recursive
-solution, such as the jobs of Section 2 with an undecorated job type (with provisional
-patches to the copied Descr), but not yet some undecorated annotations that mention
-recursive tuple types, such as lists: intersecting them does not terminate in the
-copied Descr (see [lib/vendor/README.md](lib/vendor/README.md); the corresponding test
-is skipped).
+solution, such as the jobs of Section 2 with an undecorated job type, and annotations
+that mention recursive tuple types, such as lists (with provisional patches to the
+copied Descr, see [lib/vendor/README.md](lib/vendor/README.md)). With no decoration at
+all, [examples/run_job_shared.exs](examples/run_job_shared.exs) shows that two programs
+which no single decorated arrow can serve share one `run_job` annotated with two arrows.
 
 ## Usage
 

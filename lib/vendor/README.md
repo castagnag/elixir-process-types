@@ -127,6 +127,13 @@ applies the patches of `scripts/descr_patches/`, in order:
     nodes that occur in a type. `ProcessTypes.Printer` factorizes before printing: the
     main type of the undecorated dispatcher went from 47 `rec` binders (19 KB) to 2
     (1.6 KB), at no measurable cost.
+11. `11-lazy-node-intersection.patch`, ours, proposed to Guillaume Duboc in a pull request
+    (`_claude/descr-report/pr/`): the intersection of two different recursive nodes is a
+    node of its own, named after the pair of node ids, so that `opt_intersection/2` of a
+    recursive tuple type with a copy of itself terminates (limit 2 below). The
+    intersection of a node with itself is the node. `non_empty_intersection!/3` does not
+    check the emptiness of such a node, which would unfold the node whose generator is
+    running; emptiness is decided when the node is used.
 
 Patches 02 to 07 address limits of the branch that its own tests do not exercise; they
 were reported to Guillaume Duboc, with the limits below.
@@ -135,10 +142,8 @@ Only `ProcessTypes.Types` calls these modules.
 
 ## Limits found while using the branch (2026-10-03)
 
-Three cases that inference met; with the patches above, only the second is not handled
-by the copied Descr, and the corresponding test of `test/infer_test.exs` is skipped. Run
-it, if at all, under a memory limit: this loop allocates gigabytes in seconds. In the
-reproducers, `D` is `ProcessTypes.Descr`, and `arrow(s, o, i, t)` is the encoding of
+Three cases that inference met; with the patches above, all are handled by the copied
+Descr (the second since patch 11). In the reproducers, `D` is `ProcessTypes.Descr`, and `arrow(s, o, i, t)` is the encoding of
 `ProcessTypes.Types`, `D.fun([D.union(s, D.port()), D.fun([o], D.port()), D.fun([], i)], t)`.
 
 1. **Recursive solutions through a function type** (solved by patch 07). With patch 06,
@@ -160,13 +165,14 @@ reproducers, `D` is `ProcessTypes.Descr`, and `arrow(s, o, i, t)` is the encodin
    and hashing nodes became exponential. With patch 07 they are solved in about 20 ms,
    and the whole program in about 3 s, with the expected error.
 
-2. **Intersection of a recursive tuple type.** With `l = nil or {integer(), l}`,
+2. **Intersection of a recursive tuple type** (solved by patch 11). With `l = nil or {integer(), l}`,
    `D.intersection(l, l)` does not terminate, nor does the intersection of two copies
    (two `recursive/1` systems): `opt_tuple_leaf_intersection` →
    `zip_non_empty_intersection!` intersects the components eagerly and descends through
    the nodes, with no memo on pairs of nodes. Union, difference, `subtype?` and
    `D.bare_intersection` terminate. Since tallying intersects bounds,
-   `D.tally([{l1, a}, {a, l2}])` does not terminate either.
+   `D.tally([{l1, a}, {a, l2}])` does not terminate either. Patch 11 makes the
+   intersection of two different nodes a node of its own, named after the pair.
 
 3. **A written recursive type under inferred brackets** (solved by patch 06). For
    `worker = :bump or {:run, (-> term())@[:bump, worker]}`, tallying found the expected
