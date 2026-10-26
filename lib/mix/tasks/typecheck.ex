@@ -6,7 +6,7 @@ defmodule Mix.Tasks.Typecheck do
 
       mix typecheck examples/dispatcher.exs
       mix typecheck --ground examples/dispatcher.exs
-      mix typecheck --trace examples/negate.exs
+      mix typecheck --trace examples/counter.exs
 
   By default the decorations are inferred (GRAMMAR.md, §9); `--ground` reads an
   undecorated arrow as `@[none(), term()]`. In inference mode, `--trace` also prints

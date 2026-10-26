@@ -29,12 +29,21 @@ defmodule ProcessTypes.ExamplesTest do
     end
   end
 
-  test "negate has the types of Section 4.1, in both modes" do
-    path = Path.expand("../examples/negate.exs", __DIR__)
+  test "counter of Section 4.1 is callable at :total by the client, in both modes" do
+    # The example without its error lines, and without the annotation of mixed.
+    lines = Path.expand("../examples/counter.exs", __DIR__) |> File.read!() |> String.split("\n")
+    mixed = Enum.find_index(lines, &(&1 =~ "def mixed"))
+
+    source =
+      lines
+      |> List.delete_at(mixed - 1)
+      |> Enum.reject(&(&1 =~ "# error:"))
+      |> Enum.join("\n")
 
     for mode <- [:ground, :infer] do
-      result = ProcessTypes.check_file(path, mode: mode)
-      assert ProcessTypes.Types.to_string(result.main) == "boolean()"
+      result = ProcessTypes.check_string(source, mode: mode)
+      assert result.diagnostics == [], ProcessTypes.report(result, "counter.exs")
+      assert ProcessTypes.Types.to_string(result.main) == "integer()"
     end
   end
 

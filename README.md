@@ -42,7 +42,7 @@ In a fresh clone, fetch the dependencies first (they are not in git):
 mix deps.get
 mix typecheck examples/dispatcher.exs examples/dispatcher_errors.exs
 mix typecheck --ground examples/dispatcher.exs     # every decoration known
-mix typecheck --trace examples/negate.exs          # the constraints given to tallying
+mix typecheck --trace examples/counter.exs          # the constraints given to tallying
 mix test
 ```
 
