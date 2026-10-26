@@ -109,6 +109,11 @@ defmodule ProcessTypes.CheckerTest do
       assert_error("x = 3\ncase x do\n  0 -> :zero\nend\n", 2, "do not cover integer()")
     end
 
+    test "div and rem take and return integers" do
+      assert main("div(7, 2) + rem(7, 2)") == "integer()"
+      assert_error("div(:a, 2)", 1, "the left operand of div")
+    end
+
     test "if follows Elixir's truthiness" do
       assert main("x = 3 < 4\nif x do :yes else :no end\n") == ":no or :yes"
       # an integer is always truthy: the else branch is skipped

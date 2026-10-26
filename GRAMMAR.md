@@ -69,7 +69,7 @@ e      ::= x
          | n | :a | true | false | nil     n an integer literal, possibly negative; :a any atom
          | {e, …, e}                       tuple
          | self()
-         | -e | e + e | e - e | e * e
+         | -e | e + e | e - e | e * e | div(e, e) | rem(e, e)
          | e == e | e != e | e < e | e <= e | e > e | e >= e
          | not e | e and e | e or e
          | f(e, …, e) | Alias.f(e, …, e) | e.(e, …, e)

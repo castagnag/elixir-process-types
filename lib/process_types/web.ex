@@ -98,7 +98,8 @@ defmodule ProcessTypes.Web do
     {"dispatcher_undecorated", "dispatcher (w/o decorations)"},
     {"dispatcher_errors", "dispatcher (errors)"},
     {"rpc", "Remote Procedure Call"},
-    {"rpc_errors", "Remote Procedure Call (errors)"}
+    {"rpc_errors", "Remote Procedure Call (errors)"},
+    {"run_job", "run_job (no best decoration)"}
   ]
 
   defp examples do

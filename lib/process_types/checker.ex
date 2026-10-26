@@ -363,7 +363,7 @@ defmodule ProcessTypes.Checker do
   # Rule t-self.
   defp synth(ctx, st, {:self, _}, _expected), do: {Types.pid(ctx.o), st}
 
-  # Rule t-plus, for + - * and unary minus; comparisons have type boolean().
+  # Rule t-plus, for + - * div rem and unary minus; comparisons have type boolean().
   defp synth(ctx, st, {:arith, meta, op, a, b}, _expected) do
     {ta, st} = synth(ctx, st, a, nil)
     {tb, st} = synth(ctx, st, b, nil)

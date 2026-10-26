@@ -46,7 +46,7 @@ defmodule ProcessTypes.Frontend do
   end
 
   @tests [:is_integer, :is_atom, :is_boolean, :is_tuple, :is_pid, :is_function]
-  @arith [:+, :-, :*]
+  @arith [:+, :-, :*, :div, :rem]
   @comparisons [:==, :!=, :<, :<=, :>, :>=]
   @unsupported [
     :cond,
