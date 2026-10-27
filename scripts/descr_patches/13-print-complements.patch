@@ -1,0 +1,104 @@
+OURS (not proposed to Guillaume Duboc). Printing only. to_quoted/2 prints a type whose
+complement has fewer kinds (atoms, tuples, functions...) as the negation of that
+complement: "term() minus a few tuples" reads not ({...} or {...}) instead of a union that
+lists every other kind. The complement of the complement has more kinds, so this never
+applies twice in a row and nothing is printed twice. In a closed tuple DNF line, a negated
+tuple disjoint from the positive one is dropped, and one that contains it in every
+component but one, k, is absorbed into that component:
+{p1, ..., pn} and not {n1, ..., nn} = {p1, ..., pk and not nk, ..., pn}.
+diff --git a/lib/vendor/descr.ex b/lib/vendor/descr.ex
+index 47942c0..ad27dbe 100644
+--- a/lib/vendor/descr.ex
++++ b/lib/vendor/descr.ex
+@@ -2066,6 +2066,13 @@ defmodule ProcessTypes.Descr do
+         {static, extra}
+       end
+ 
++    {static, extra} =
++      if quoted = complement_to_quoted(static, opts) do
++        {%{}, [quoted | extra]}
++      else
++        {static, extra}
++      end
++
+     # Dynamic always come first for visibility
+     unions =
+       to_quoted(:dynamic, dynamic, opts) ++ static_non_term_type_to_quoted(static, extra, opts)
+@@ -2119,6 +2126,21 @@ defmodule ProcessTypes.Descr do
+     end
+   end
+ 
++  # A type whose complement has fewer kinds (atoms, tuples, functions...) is printed as
++  # the negation of its complement: "term() minus a few tuples" reads not ({...} or
++  # {...}) instead of a union that lists every other kind. The complement of the
++  # complement has more kinds, so this never applies twice in a row, and nothing is
++  # printed twice.
++  defp complement_to_quoted(static, _opts) when map_size(static) == 0, do: nil
++
++  defp complement_to_quoted(static, opts) do
++    complement = static |> bare_negation() |> unfold()
++
++    if map_size(complement) > 0 and map_size(complement) < map_size(static) do
++      {:not, [], [non_term_type_to_quoted(complement, opts)]}
++    end
++  end
++
+   # Unions would be printed as negations within negations
+   defp print_as_negated_type?(%{atom: {:union, _}}), do: false
+   defp print_as_negated_type?(%{fun: {:union, _}}), do: false
+@@ -6552,6 +6574,7 @@ defmodule ProcessTypes.Descr do
+ 
+   defp tuple_to_quoted(bdd, opts) do
+     tuple_bdd_to_dnf_with_negations(bdd)
++    |> Enum.map(&tuple_line_absorb_negations/1)
+     |> opt_tuple_fusion()
+     |> Enum.map(&tuple_literal_to_quoted(&1, opts))
+   end
+@@ -6587,6 +6610,47 @@ defmodule ProcessTypes.Descr do
+     end)
+   end
+ 
++  # For printing: a negated tuple disjoint from the positive one is dropped, and one
++  # that contains it in every component but one, k, is absorbed into that component:
++  # {p1, ..., pn} and not {n1, ..., nn} = {p1, ..., pk and not nk, ..., pn}.
++  defp tuple_line_absorb_negations({:closed, elements, negs}) do
++    {elements, negs} =
++      Enum.reduce(negs, {elements, []}, fn
++        bdd_leaf(:closed, others) = neg, {elements, kept}
++        when length(others) == length(elements) ->
++          case tuple_negation_effect(elements, others) do
++            :disjoint ->
++              {elements, kept}
++
++            {:component, k} ->
++              {List.update_at(elements, k, &difference(&1, Enum.at(others, k))), kept}
++
++            :kept ->
++              {elements, [neg | kept]}
++          end
++
++        neg, {elements, kept} ->
++          {elements, [neg | kept]}
++      end)
++
++    {:closed, elements, Enum.reverse(negs)}
++  end
++
++  defp tuple_line_absorb_negations(line), do: line
++
++  defp tuple_negation_effect(elements, others) do
++    pairs = Enum.zip(elements, others)
++
++    if Enum.any?(pairs, fn {p, n} -> disjoint?(p, n) end) do
++      :disjoint
++    else
++      case pairs |> Enum.with_index() |> Enum.reject(fn {{p, n}, _} -> subtype?(p, n) end) do
++        [{_, k}] -> {:component, k}
++        _ -> :kept
++      end
++    end
++  end
++
+   defp tuple_literal_to_quoted({:closed, [], []}, _opts), do: {:{}, [], []}
+ 
+   defp tuple_literal_to_quoted({tag, elements, negs}, opts) do

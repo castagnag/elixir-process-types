@@ -142,6 +142,19 @@ applies the patches of `scripts/descr_patches/`, in order:
     clicks in the playground) gave equivalent but differently written types, and
     different times. Each check of the playground runs in a fresh process, so now it
     gives the same result as in a fresh VM. Variables, like nodes, are local to a process.
+13. `13-print-complements.patch`, ours, not proposed to Guillaume Duboc; printing only.
+    `to_quoted/2` prints a type whose complement has fewer kinds (atoms, tuples,
+    functions, ...) as `not` that complement, so that "term() minus a few tuples", the
+    form of the input decorations that inference finds, no longer lists every other kind.
+    The complement of the complement has more kinds: the rule never applies twice in a
+    row, and nothing is printed twice. In a closed tuple DNF line, a negated tuple
+    disjoint from the positive one is dropped, and one that contains it in every
+    component but one, k, is absorbed into that component:
+    `{p1, ..., pn} and not {n1, ..., nn}` = `{p1, ..., pk and not nk, ..., pn}`. The
+    input decoration of `loop` in `examples/server.exs` now prints
+    `not ({:run, not (-> term())@[...]} or {:total, not pid({:total, integer()})} or
+    {:work_add, not integer()})`. Printing all the types of that example takes 9 ms
+    instead of 31 ms.
 
 Patches 02 to 07 address limits of the branch that its own tests do not exercise; they
 were reported to Guillaume Duboc, with the limits below.

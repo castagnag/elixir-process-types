@@ -51,6 +51,36 @@ defmodule ProcessTypes.PrinterTest do
     assert Printer.to_string(list) == "rec list. nil or {integer(), list}"
   end
 
+  test "a type whose complement has fewer kinds is printed as not its complement" do
+    job = Types.arrow(Types.tuple([]), Types.none(), Types.term(), Types.term())
+
+    bad =
+      Types.union(
+        Types.tuple([Types.atom([:add]), Types.negation(Types.integer())]),
+        Types.tuple([Types.atom([:run]), Types.negation(job)])
+      )
+
+    # Descr's own negated form, which applies first when there are no positive tuples
+    assert show(Types.negation(bad)) ==
+             "not {:add, not integer()} and not {:run, not (-> term())}"
+
+    assert show(
+             Types.union(Types.negation(bad), Types.tuple([Types.atom([:add]), Types.atom([:x])]))
+           ) ==
+             "not ({:add, not :x and not integer()} or {:run, not (-> term())})"
+
+    assert show(Types.difference(Types.term(), Types.atom([:a]))) == "not :a"
+    assert show(Types.union(Types.atom([:a]), Types.integer())) == ":a or integer()"
+  end
+
+  test "negated tuples are absorbed into the component they restrict, or dropped" do
+    add = Types.tuple([Types.atom([:add]), Types.term()])
+    add_int = Types.tuple([Types.atom([:add]), Types.integer()])
+    run = Types.tuple([Types.atom([:run]), Types.term()])
+    assert show(Types.difference(add, add_int)) == "{:add, not integer()}"
+    assert show(Types.difference(add, run)) == "{:add, term()}"
+  end
+
   test "decorations are printed with names" do
     arrow = Types.arrow(Types.tuple([]), w(), Types.term(), Types.atom([:a]))
     assert show(arrow) == "(-> :a)@[w, term()]"
