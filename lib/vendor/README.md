@@ -134,6 +134,14 @@ applies the patches of `scripts/descr_patches/`, in order:
     intersection of a node with itself is the node. `non_empty_intersection!/3` does not
     check the emptiness of such a node, which would unfold the node whose generator is
     running; emptiness is decided when the node is used.
+12. `12-local-identities.patch`, ours, not proposed to Guillaume Duboc: type variables and
+    recursive systems are numbered by counters of the process (process dictionary, like
+    the interned nodes of patch 07) instead of `:erlang.unique_integer/1` and
+    `make_ref/0`, global to the VM. BDD literals are ordered by the hash of their
+    content, which contains these identities, so the same check run twice in one VM (two
+    clicks in the playground) gave equivalent but differently written types, and
+    different times. Each check of the playground runs in a fresh process, so now it
+    gives the same result as in a fresh VM. Variables, like nodes, are local to a process.
 
 Patches 02 to 07 address limits of the branch that its own tests do not exercise; they
 were reported to Guillaume Duboc, with the limits below.

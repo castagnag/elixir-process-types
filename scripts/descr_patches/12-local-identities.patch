@@ -1,0 +1,55 @@
+OURS (not proposed to Guillaume Duboc). Type variables and recursive systems are named by
+counters of the process (in the process dictionary, like the interned nodes of patch 07)
+instead of :erlang.unique_integer/1 and make_ref/0, which are global to the VM. The order
+of the literals of tuple and map BDDs is that of the hash of their content, which contains
+these identities; with global names, the same check run twice in one VM gave equivalent
+but differently written types (and different times), depending on the earlier checks.
+--- a/lib/vendor/descr.ex
++++ b/lib/vendor/descr.ex
+@@ -120,7 +120,7 @@
+   repeated occurrences of the same variable.
+   """
+   def var(name) when is_atom(name) do
+-    identity = {:type_variable, :erlang.unique_integer([:positive, :monotonic]), name}
++    identity = {:type_variable, local_counter(:variable_count), name}
+     wrap_polymorphic(Poly.variable(identity, term(), none()))
+   end
+ 
+@@ -278,6 +278,19 @@
+     end
+   end
+ 
++  # Identities of variables and recursive systems, numbered by a counter of the process
++  # instead of :erlang.unique_integer/1 and make_ref/0, which are global to the VM. The
++  # order of BDD literals depends on the hash of these identities, so with global names
++  # the same check gave equivalent but differently written types, and different times,
++  # depending on what the VM had done before. Like nodes, they are local to a process.
++  defp local_counter(key) do
++    n = dict_get({__MODULE__, key}, 0) + 1
++    :erlang.put({__MODULE__, key}, n)
++    n
++  end
++
++  defp local_ref(), do: {:local_ref, local_counter(:ref_count)}
++
+   # The process dictionary, through :erlang: the type checker runs while Elixir
+   # bootstraps, before the module Process exists.
+   defp dict_get(key, default \\ nil) do
+@@ -340,7 +353,7 @@
+   def recursive(equations) when is_map(equations) do
+     state =
+       Map.new(equations, fn {name, generator} ->
+-        {name, {make_ref(), make_ref(), generator}}
++        {name, {local_ref(), local_ref(), generator}}
+       end)
+ 
+     Map.new(state, fn {name, {id, _if_set_id, generator}} ->
+@@ -459,7 +472,7 @@
+   constructors, but not inside the definitions of the nodes) by `fun.(node)`.
+   """
+   def map_nodes(descr, fun) do
+-    do_substitute(descr, %{}, {{:map_nodes, make_ref()}, &{:ok, fun.(&1)}}, false)
++    do_substitute(descr, %{}, {{:map_nodes, local_ref()}, &{:ok, fun.(&1)}}, false)
+   end
+ 
+   # The nodes reachable from a type, in depth-first order (reversed).

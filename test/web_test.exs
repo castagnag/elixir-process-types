@@ -50,6 +50,14 @@ defmodule ProcessTypes.WebTest do
     assert main =~ "{:run, (-> Server.job_writes)"
   end
 
+  test "checking the same program twice gives the same result, whatever the VM did between" do
+    source = File.read!("examples/dispatcher_undecorated.exs")
+    first = Web.check(source)
+    for _ <- 1..3, do: {:erlang.unique_integer([:positive, :monotonic]), make_ref()}
+    assert Web.check("$self_interface :a\nsend(self(), :a)\n").ok
+    assert Web.check(source) == first
+  end
+
   test "a rejected program, in ground mode" do
     source = "$self_interface :a\nsend(self(), :b)\n"
     conn = call(:post, "/check", %{source: source, mode: "ground"})
