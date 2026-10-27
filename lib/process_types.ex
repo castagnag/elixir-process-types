@@ -34,9 +34,7 @@ defmodule ProcessTypes do
     case result.diagnostics do
       [] ->
         functions =
-          Enum.map(result.functions, fn {name, type} ->
-            "  #{name} : #{TypeSyntax.to_string(type)}"
-          end)
+          Enum.map(result.functions, &"  #{&1.name} : #{TypeSyntax.to_string(&1.annotation)}")
 
         main =
           if result.main,

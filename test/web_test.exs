@@ -54,6 +54,23 @@ defmodule ProcessTypes.WebTest do
     assert main =~ "{:run, (-> Server.job_writes)"
   end
 
+  test "an overloaded function shows each arrow with the decorations inferred for it" do
+    # run_job_shared.exs without its rejected program
+    source =
+      "examples/run_job_shared.exs"
+      |> File.read!()
+      |> String.replace(
+        ~r/^\$interface .*\n(?=spawn\(fn -> Single)|^spawn\(fn -> Single.*\n/m,
+        ""
+      )
+
+    conn = call(:post, "/check", %{source: source})
+    assert %{"ok" => true, "functions" => funs} = JSON.decode!(conn.resp_body)
+    overloaded = Enum.find(funs, &(&1["name"] == "Overloaded.run_job/0"))
+    assert overloaded["bare"] == "(-> term()) and (-> term())"
+    assert [_, _] = String.split(overloaded["type"], ")@[none(), ", parts: 3) |> tl()
+  end
+
   test "types are also sent without decorations" do
     conn =
       call(:post, "/check", %{source: File.read!("examples/server_decorated.exs"), mode: "ground"})

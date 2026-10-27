@@ -92,12 +92,17 @@ defmodule ProcessTypes.Web do
       ok: result.diagnostics == [],
       diagnostics: Enum.map(result.diagnostics, &%{line: &1.line, message: &1.message}),
       functions:
-        Enum.map(result.functions, fn {name, type} ->
-          %{
-            name: name,
-            type: TypeSyntax.to_string(type),
-            bare: type |> TypeSyntax.erase_decorations() |> TypeSyntax.to_string()
-          }
+        Enum.map(result.functions, fn
+          %{type: false} = f ->
+            written = TypeSyntax.to_string(f.annotation)
+            %{name: f.name, type: written, bare: written}
+
+          f ->
+            %{
+              name: f.name,
+              type: Printer.to_string(f.type, f.names),
+              bare: Printer.to_string(f.type, f.names, decorations: false)
+            }
         end),
       main: result.main && Printer.to_string(result.main, result.names),
       main_bare: result.main && Printer.to_string(result.main, result.names, decorations: false)

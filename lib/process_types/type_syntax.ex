@@ -124,12 +124,13 @@ defmodule ProcessTypes.TypeSyntax do
 
   @doc """
   The type `t` with the decorations of its arrows removed, for display only: the result
-  prints undecorated arrows, which do not mean `@[none(), term()]` here. Operands of a
-  union or an intersection that become equal are merged.
+  prints undecorated arrows, which do not mean `@[none(), term()]` here. Operands that
+  become equal are kept: the arrows of an intersection may differ only by their
+  decorations.
   """
   def erase_decorations({:rec, x, t}), do: {:rec, x, erase_decorations(t)}
-  def erase_decorations({:or, a, b}), do: merge(:or, erase_decorations(a), erase_decorations(b))
-  def erase_decorations({:and, a, b}), do: merge(:and, erase_decorations(a), erase_decorations(b))
+  def erase_decorations({:or, a, b}), do: {:or, erase_decorations(a), erase_decorations(b)}
+  def erase_decorations({:and, a, b}), do: {:and, erase_decorations(a), erase_decorations(b)}
   def erase_decorations({:not, a}), do: {:not, erase_decorations(a)}
   def erase_decorations({:tuple, ts}), do: {:tuple, Enum.map(ts, &erase_decorations/1)}
   def erase_decorations({:pid, :none} = p), do: p
@@ -139,9 +140,6 @@ defmodule ProcessTypes.TypeSyntax do
     do: {:arrow, Enum.map(args, &erase_decorations/1), erase_decorations(ret), nil}
 
   def erase_decorations(t), do: t
-
-  defp merge(_, a, a), do: a
-  defp merge(op, a, b), do: {op, a, b}
 
   # Precedence: rec 0, or 1, and 2, not 3, atomic 4. The body of rec extends as far
   # to the right as possible.

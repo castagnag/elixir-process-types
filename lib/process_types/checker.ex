@@ -24,7 +24,9 @@ defmodule ProcessTypes.Checker do
   defmodule Result do
     @moduledoc """
     The outcome of a check: the diagnostics, the annotated functions as
-    `{name, annotation}`, with the annotation as a `TypeSyntax` tree, the type of the main process body (or `nil`), the
+    `%{name, annotation, type, names}` (the annotation as a `TypeSyntax` tree; its type
+    with the decorations found, or `false` if it is invalid; the type names visible in
+    its module), the type of the main process body (or `nil`), the
     type names visible at the top level, for printing (`ProcessTypes.Printer`), and the
     mode of the check. In inference mode, `constraints` lists the constraints deferred to
     tallying, as `%{sub: s, sup: t, line: line}`, in generation order.
@@ -94,7 +96,14 @@ defmodule ProcessTypes.Checker do
 
     functions =
       for fun <- program.funs |> Map.values() |> Enum.sort_by(& &1.line), fun.annotation do
-        {fun_name(fun.module, fun.name, fun.arity), elem(fun.annotation, 0)}
+        sig = Map.fetch!(sigs, {fun.module, fun.name, fun.arity})
+
+        %{
+          name: fun_name(fun.module, fun.name, fun.arity),
+          annotation: elem(fun.annotation, 0),
+          type: sig.arrows != :invalid && backend.instance(st, sig.type),
+          names: Map.fetch!(names, fun.module)
+        }
       end
 
     %Result{
