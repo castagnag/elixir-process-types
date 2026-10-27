@@ -273,6 +273,8 @@
 (() => {
   const API = window.PLAYGROUND_API || "";
   const STORE = "process-types-playground";
+  // The example a new visit opens (a reload of the tab keeps the program being edited).
+  const START = "Server";
   const $ = (id) => document.getElementById(id);
   const editor = $("editor"), code = $("code"), gutter = $("gutter"), results = $("results"),
         picker = $("examples"), status = $("status"), checkButton = $("check");
@@ -395,8 +397,9 @@
     sync();
   }
 
-  function save() { try { localStorage.setItem(STORE, editor.value); } catch (e) {} }
-  function restore() { try { return localStorage.getItem(STORE); } catch (e) { return null; } }
+  // The program is kept for the tab only, so that a new visit starts from START.
+  function save() { try { sessionStorage.setItem(STORE, editor.value); } catch (e) {} }
+  function restore() { try { return sessionStorage.getItem(STORE); } catch (e) { return null; } }
 
   function use(example) {
     editor.value = example.source;
@@ -568,7 +571,8 @@
       examples = [];
     }
     for (const example of examples) picker.append(new Option(example.name, example.name));
-    // ?example=name opens that example, otherwise the last program is restored
+    // ?example=name opens that example, otherwise the program of this tab is restored,
+    // otherwise START opens
     const wanted = examples.find((x) => x.name === new URLSearchParams(location.search).get("example"));
     const saved = restore();
     if (wanted) {
@@ -578,7 +582,7 @@
       refresh();
       check();
     } else if (examples.length) {
-      use(examples[0]);
+      use(examples.find((x) => x.name === START) || examples[0]);
     } else {
       refresh();
       setStatus("the server does not answer", true);

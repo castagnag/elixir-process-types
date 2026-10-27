@@ -23,8 +23,11 @@ defmodule ProcessTypes.WebTest do
   test "the examples, the running example first" do
     conn = call(:get, "/examples")
     assert conn.status == 200
-    [first | _] = examples = JSON.decode!(conn.resp_body)
-    assert first["name"] == "dispatcher"
+    examples = JSON.decode!(conn.resp_body)
+
+    assert ["Server", "Server (with decorations)", "Server (with errors)" | _] =
+             Enum.map(examples, & &1["name"])
+
     assert "Remote Procedure Call" in Enum.map(examples, & &1["name"])
     assert "mixing_write" in Enum.map(examples, & &1["name"])
   end

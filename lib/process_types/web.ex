@@ -92,11 +92,12 @@ defmodule ProcessTypes.Web do
     }
   end
 
-  # The examples, named after their file unless @titles names them otherwise; the
-  # running example of Section 2 first, then the files of @titles.
+  # The examples, named after their file unless @titles names them otherwise: the files
+  # of @titles first, in this order, then the others by file name.
   @titles [
-    {"dispatcher_undecorated", "dispatcher (w/o decorations)"},
-    {"dispatcher_errors", "dispatcher (errors)"},
+    {"dispatcher_undecorated", "Server"},
+    {"dispatcher", "Server (with decorations)"},
+    {"dispatcher_errors", "Server (with errors)"},
     {"rpc", "Remote Procedure Call"},
     {"rpc_errors", "Remote Procedure Call (errors)"},
     {"run_job", "run_job (no best decoration)"},
@@ -109,7 +110,7 @@ defmodule ProcessTypes.Web do
     |> Path.wildcard()
     |> Enum.map(&{Path.basename(&1, ".exs"), &1})
     |> Enum.sort_by(fn {base, _} ->
-      {base != "dispatcher", Enum.find_index(@titles, &(elem(&1, 0) == base)) || length(@titles), base}
+      {Enum.find_index(@titles, &(elem(&1, 0) == base)) || length(@titles), base}
     end)
     |> Enum.map(fn {base, path} ->
       %{name: List.keyfind(@titles, base, 0, {base, base}) |> elem(1), source: File.read!(path)}
