@@ -41,9 +41,19 @@ defmodule ProcessTypes.Printer do
     |> Enum.sort_by(fn {_, t} -> -size(t) end)
   end
 
-  @doc "The type `t` in the syntax of annotations, with the given names."
-  def to_string(t, names \\ []),
-    do: t |> Types.factorize() |> Types.to_syntax() |> rename(names) |> TypeSyntax.to_string()
+  @doc """
+  The type `t` in the syntax of annotations, with the given names. With
+  `decorations: false`, the decorations of arrows are erased
+  (`TypeSyntax.erase_decorations/1`).
+  """
+  def to_string(t, names \\ [], opts \\ []) do
+    tree = t |> Types.factorize() |> Types.to_syntax() |> rename(names)
+
+    tree =
+      if Keyword.get(opts, :decorations, true), do: tree, else: TypeSyntax.erase_decorations(tree)
+
+    TypeSyntax.to_string(tree)
+  end
 
   defp rename(tree, []), do: tree
 

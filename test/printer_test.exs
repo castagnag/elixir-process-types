@@ -57,7 +57,7 @@ defmodule ProcessTypes.PrinterTest do
   end
 
   test "the messages of Section 2 name the interfaces" do
-    path = Path.expand("../examples/dispatcher_errors.exs", __DIR__)
+    path = Path.expand("../examples/server_errors.exs", __DIR__)
     result = ProcessTypes.check_file(path, mode: :ground)
     messages = Map.new(result.diagnostics, &{&1.line, &1.message})
 

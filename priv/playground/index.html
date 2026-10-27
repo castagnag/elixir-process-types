@@ -178,6 +178,9 @@
   .cmt { color: var(--cmt); font-style: italic; }
   .ann { color: var(--ann); }
   .results-pane { padding: 16px 20px 24px; overflow: auto; min-height: 0; }
+  .result-bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; }
+  label.toggle { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13.5px; cursor: pointer; user-select: none; }
+  label.toggle input { margin: 0; accent-color: var(--accent); }
   .verdict { display: inline-block; padding: 3px 12px; border-radius: 999px; font-weight: 650; font-size: 14px; }
   .verdict.good { background: var(--good-bg); color: var(--good); }
   .verdict.bad { background: var(--bad-bg); color: var(--bad); }
@@ -263,7 +266,7 @@
         <tr><td><code>:a</code>, <code>{T, …}</code>, <code>integer()</code>, …</td><td>as in Elixir, with <code>or</code>, <code>and</code>, <code>not</code></td></tr>
         <tr><td><code>x when is_integer(x)</code></td><td>guards are type tests on variables</td></tr>
         <tr><td><code>fn -> … end</code></td><td>unannotated: its decorations are inferred</td></tr>
-        <tr><td>removing decorations</td><td>may make checking much slower, or keep it from finishing: see the comments of the dispatcher example</td></tr>
+        <tr><td>removing decorations</td><td>may make checking much slower, or keep it from finishing: see the comments of the Server examples</td></tr>
         <tr><td>Ctrl/⌘ + Enter</td><td>check now; checks also run as you type</td></tr>
       </table>
     </details>
@@ -359,15 +362,39 @@
     return [element("h2", null, title), box];
   }
 
+  // Whether the types of an accepted program show the decorations of their arrows.
+  const DECORATIONS = STORE + "-decorations";
+  let decorations = false, last = null;
+  try { decorations = localStorage.getItem(DECORATIONS) === "true"; } catch (e) {}
+
+  function decorationsToggle() {
+    const label = element("label", "toggle"), box = element("input");
+    box.type = "checkbox";
+    box.checked = decorations;
+    box.addEventListener("change", () => {
+      decorations = box.checked;
+      try { localStorage.setItem(DECORATIONS, decorations); } catch (e) {}
+      render(last);
+    });
+    label.title = "Without decorations, (s -> t) stands for (s -> t)@[o, i] for some o and i";
+    label.append(box, document.createTextNode("show decorations"));
+    return label;
+  }
+
   function render(data) {
+    last = data;
     results.replaceChildren();
     errorLines = new Set();
     if (data.error) {
       results.append(element("span", "verdict bad", data.error));
     } else if (data.ok) {
-      results.append(element("span", "verdict good", "accepted"));
-      if (data.functions.length) results.append(...rows("Functions", data.functions.map((f) => [f.name, f.type])));
-      if (data.main) results.append(...rows("Main process", [["body", data.main]]));
+      const bar = element("div", "result-bar");
+      bar.append(element("span", "verdict good", "accepted"));
+      if (data.functions.length || data.main) bar.append(decorationsToggle());
+      results.append(bar);
+      if (data.functions.length)
+        results.append(...rows("Functions", data.functions.map((f) => [f.name, decorations ? f.type : f.bare])));
+      if (data.main) results.append(...rows("Main process", [["body", decorations ? data.main : data.main_bare]]));
     } else {
       const n = data.diagnostics.length;
       results.append(element("span", "verdict bad", n === 1 ? "1 error" : `${n} errors`));
@@ -571,9 +598,10 @@
       examples = [];
     }
     for (const example of examples) picker.append(new Option(example.name, example.name));
-    // ?example=name opens that example, otherwise the program of this tab is restored,
+    // ?example=name opens that example (by menu name or file name), otherwise the program of this tab is restored,
     // otherwise START opens
-    const wanted = examples.find((x) => x.name === new URLSearchParams(location.search).get("example"));
+    const asked = new URLSearchParams(location.search).get("example");
+    const wanted = examples.find((x) => x.name === asked) || examples.find((x) => x.file === asked);
     const saved = restore();
     if (wanted) {
       use(wanted);

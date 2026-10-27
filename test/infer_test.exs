@@ -115,10 +115,10 @@ defmodule ProcessTypes.InferTest do
   end
 
   test "eliminating variables and searching for one solution give the same verdicts" do
-    # The examples, except dispatcher_undecorated, on which tallying all the solutions
+    # The examples, except server, on which tallying all the solutions
     # of all the variables takes too long (30 to 50 s already when loop was decorated).
     for path <- Path.wildcard(Path.expand("../examples/*.exs", __DIR__)),
-        Path.basename(path) != "dispatcher_undecorated.exs",
+        Path.basename(path) != "server.exs",
         source = File.read!(path) do
       assert lines(source, eliminate: false, tally: :all) == lines(source), path
       assert lines(source, eliminate: false) == lines(source), path
@@ -212,7 +212,7 @@ defmodule ProcessTypes.InferTest do
   # More than 150 s each before patch 09.
   @tag timeout: 30_000
   test "the dispatcher without any decoration" do
-    source = undecorate(example("dispatcher"))
+    source = undecorate(example("server_decorated"))
     refute source =~ ~r/^\s*\$.*@/m
     assert lines(source) == []
   end
@@ -220,7 +220,7 @@ defmodule ProcessTypes.InferTest do
   @tag :slow
   @tag timeout: 60_000
   test "the dispatcher with errors without any decoration" do
-    source = undecorate(example("dispatcher_errors"))
+    source = undecorate(example("server_errors"))
     refute source =~ ~r/^\s*\$.*@/m
 
     marked =

@@ -30,6 +30,7 @@ defmodule ProcessTypes.WebTest do
 
     assert "Remote Procedure Call" in Enum.map(examples, & &1["name"])
     assert "mixing_write" in Enum.map(examples, & &1["name"])
+    assert ["server", "server_decorated", "server_errors" | _] = Enum.map(examples, & &1["file"])
   end
 
   test "the documentation" do
@@ -48,13 +49,24 @@ defmodule ProcessTypes.WebTest do
   end
 
   test "an accepted program with recursive types, printed in the checking process" do
-    conn = call(:post, "/check", %{source: File.read!("examples/dispatcher.exs")})
+    conn = call(:post, "/check", %{source: File.read!("examples/server_decorated.exs")})
     assert %{"ok" => true, "main" => main} = JSON.decode!(conn.resp_body)
     assert main =~ "{:run, (-> Server.job_writes)"
   end
 
+  test "types are also sent without decorations" do
+    conn =
+      call(:post, "/check", %{source: File.read!("examples/server_decorated.exs"), mode: "ground"})
+
+    assert %{"ok" => true, "main" => main, "main_bare" => bare, "functions" => funs} =
+             JSON.decode!(conn.resp_body)
+
+    assert main =~ "@" and not (bare =~ "@")
+    assert Enum.any?(funs, &(&1["type"] =~ "@")) and Enum.all?(funs, &(not (&1["bare"] =~ "@")))
+  end
+
   test "checking the same program twice gives the same result, whatever the VM did between" do
-    source = File.read!("examples/dispatcher_undecorated.exs")
+    source = File.read!("examples/server.exs")
     first = Web.check(source)
     for _ <- 1..3, do: {:erlang.unique_integer([:positive, :monotonic]), make_ref()}
     assert Web.check("$self_interface :a\nsend(self(), :a)\n").ok
@@ -77,7 +89,7 @@ defmodule ProcessTypes.WebTest do
   end
 
   test "a check interrupts the previous one of the same client, not those of others" do
-    slow = File.read!("examples/dispatcher_undecorated.exs")
+    slow = File.read!("examples/server.exs")
     first = Task.async(fn -> Web.check(slow, client: "a") end)
     other = Task.async(fn -> Web.check(slow, client: "b") end)
     Process.sleep(200)

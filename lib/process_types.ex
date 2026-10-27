@@ -8,7 +8,7 @@ defmodule ProcessTypes do
   (`ProcessTypes.Checker`).
   """
 
-  alias ProcessTypes.{Checker, Diagnostic, Frontend}
+  alias ProcessTypes.{Checker, Diagnostic, Frontend, TypeSyntax}
   alias ProcessTypes.Checker.Result
 
   @doc """
@@ -33,7 +33,10 @@ defmodule ProcessTypes do
   def report(%Result{} = result, file \\ "nofile") do
     case result.diagnostics do
       [] ->
-        functions = Enum.map(result.functions, fn {name, type} -> "  #{name} : #{type}" end)
+        functions =
+          Enum.map(result.functions, fn {name, type} ->
+            "  #{name} : #{TypeSyntax.to_string(type)}"
+          end)
 
         main =
           if result.main,

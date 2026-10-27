@@ -19,11 +19,11 @@ the components of tuple patterns) are replaced by their bounds, which preserves
 satisfiability, and tallying searches for one solution instead of all of them
 (`ProcessTypes.Eliminate`, `lib/vendor/README.md`, patch 08); the solution is built as
 one system of mutually recursive types (patch 09). On the dispatcher of Section 2
-([examples/dispatcher.exs](examples/dispatcher.exs)), any set of decorations can be
+([examples/server_decorated.exs](examples/server_decorated.exs)), any set of decorations can be
 removed: checking takes a tenth of a second while the decorations of the job type are
 written, and about a second without them, also without any decoration
-([examples/dispatcher_undecorated.exs](examples/dispatcher_undecorated.exs)). Locating
-errors costs more: on [examples/dispatcher_errors.exs](examples/dispatcher_errors.exs),
+([examples/server.exs](examples/server.exs)). Locating
+errors costs more: on [examples/server_errors.exs](examples/server_errors.exs),
 9 to 15 s without the decorations of the job type.
 
 **Status:** work in progress. The checker implements Sections 3–6, and the inference of
@@ -44,8 +44,8 @@ In a fresh clone, fetch the dependencies first (they are not in git):
 
 ```
 mix deps.get
-mix typecheck examples/dispatcher.exs examples/dispatcher_errors.exs
-mix typecheck --ground examples/dispatcher.exs     # every decoration known
+mix typecheck examples/server_decorated.exs examples/server_errors.exs
+mix typecheck --ground examples/server_decorated.exs     # every decoration known
 mix typecheck --trace examples/counter.exs          # the constraints given to tallying
 mix test
 ```
@@ -62,8 +62,8 @@ mix playground --port 4100
 ```
 
 The playground is a page where a program is checked as it is written. The examples
-can be loaded from a menu, or directly with `?example=name` (e.g.
-`http://localhost:4000/?example=dispatcher_errors`), and each error links to its line. The border between the two panes can be dragged
+can be loaded from a menu, or directly with `?example=name`, by menu name or file name (e.g.
+`http://localhost:4000/?example=server_errors`), and each error links to its line. The border between the two panes can be dragged
 (or moved with the arrow keys), and the README and the grammar open from the header.
 Each check runs in a process of its own (`ProcessTypes.Web.Runner`), which is interrupted
 after 90 s, when its heap exceeds 2 GB, when the server exceeds 4 GB, or when the same

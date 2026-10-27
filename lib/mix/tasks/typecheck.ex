@@ -4,8 +4,8 @@ defmodule Mix.Tasks.Typecheck do
   Type-checks the given files and prints the errors, or the annotated functions and
   the type of the main process.
 
-      mix typecheck examples/dispatcher.exs
-      mix typecheck --ground examples/dispatcher.exs
+      mix typecheck examples/server_decorated.exs
+      mix typecheck --ground examples/server_decorated.exs
       mix typecheck --trace examples/counter.exs
 
   By default the decorations are inferred (GRAMMAR.md, §9); `--ground` reads an

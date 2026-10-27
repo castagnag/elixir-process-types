@@ -1,6 +1,6 @@
 # Section 2: the client sends that the worker's interface rejects: two messages,
 # and two jobs that overstep, one on the write side and one on the read side.
-# The Server module is the one of dispatcher.exs (see there which decorations can be
+# The Server module is the one of server_decorated.exs (see there which decorations can be
 # removed). Here the errors must also be located, which costs more: without the
 # decorations of job, whatever other decorations are written, the check takes 9 to
 # 15 s instead of a third of a second, since localization solves about twenty

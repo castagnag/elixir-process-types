@@ -2,7 +2,7 @@
 # run jobs (closures) that clients send them. Every decoration is written. All are
 # optional, since inference finds them: any set of them can be removed, and the check
 # then takes from a tenth of a second to about a second (see the comments on job and
-# loop, and dispatcher_undecorated.exs, which has none).
+# loop, and server.exs, which has none).
 # Expected: accepted.
 
 defmodule Server do

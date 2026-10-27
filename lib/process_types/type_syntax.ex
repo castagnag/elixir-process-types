@@ -122,6 +122,27 @@ defmodule ProcessTypes.TypeSyntax do
   @doc "Prints a source type in the syntax of annotations."
   def to_string(t), do: show(t, 0)
 
+  @doc """
+  The type `t` with the decorations of its arrows removed, for display only: the result
+  prints undecorated arrows, which do not mean `@[none(), term()]` here. Operands of a
+  union or an intersection that become equal are merged.
+  """
+  def erase_decorations({:rec, x, t}), do: {:rec, x, erase_decorations(t)}
+  def erase_decorations({:or, a, b}), do: merge(:or, erase_decorations(a), erase_decorations(b))
+  def erase_decorations({:and, a, b}), do: merge(:and, erase_decorations(a), erase_decorations(b))
+  def erase_decorations({:not, a}), do: {:not, erase_decorations(a)}
+  def erase_decorations({:tuple, ts}), do: {:tuple, Enum.map(ts, &erase_decorations/1)}
+  def erase_decorations({:pid, :none} = p), do: p
+  def erase_decorations({:pid, t}), do: {:pid, erase_decorations(t)}
+
+  def erase_decorations({:arrow, args, ret, _}),
+    do: {:arrow, Enum.map(args, &erase_decorations/1), erase_decorations(ret), nil}
+
+  def erase_decorations(t), do: t
+
+  defp merge(_, a, a), do: a
+  defp merge(op, a, b), do: {op, a, b}
+
   # Precedence: rec 0, or 1, and 2, not 3, atomic 4. The body of rec extends as far
   # to the right as possible.
   defp show({:rec, x, t}, p), do: paren(p > 0, "rec #{x}. #{show(t, 0)}")

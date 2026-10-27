@@ -3,10 +3,12 @@ defmodule ProcessTypes.Web do
   The playground: a page where programs are type-checked as they are written.
 
       GET  /          the page
-      GET  /examples  the programs of examples/, as [{"name", "source"}]
+      GET  /examples  the programs of examples/, as [{"name", "file", "source"}], where
+                      "file" is the file name without .exs
       GET  /docs      README.md and GRAMMAR.md, as [{"name", "source"}]
       POST /check     {"source": ..., "mode": "infer" | "ground", "client": ...},
-                      answered by {"ok", "diagnostics", "functions", "main"} or
+                      answered by {"ok", "diagnostics", "functions", "main",
+                      "main_bare"} or
                       {"error"}; the mode is inference by default (GRAMMAR.md, §9), and
                       a check interrupts the previous one of the same "client"
 
@@ -16,6 +18,8 @@ defmodule ProcessTypes.Web do
   """
 
   use Plug.Router
+
+  alias ProcessTypes.{Printer, TypeSyntax}
 
   @root Path.expand("../..", __DIR__)
   @examples Path.join(@root, "examples")
@@ -87,17 +91,25 @@ defmodule ProcessTypes.Web do
     %{
       ok: result.diagnostics == [],
       diagnostics: Enum.map(result.diagnostics, &%{line: &1.line, message: &1.message}),
-      functions: Enum.map(result.functions, fn {name, type} -> %{name: name, type: type} end),
-      main: result.main && ProcessTypes.Printer.to_string(result.main, result.names)
+      functions:
+        Enum.map(result.functions, fn {name, type} ->
+          %{
+            name: name,
+            type: TypeSyntax.to_string(type),
+            bare: type |> TypeSyntax.erase_decorations() |> TypeSyntax.to_string()
+          }
+        end),
+      main: result.main && Printer.to_string(result.main, result.names),
+      main_bare: result.main && Printer.to_string(result.main, result.names, decorations: false)
     }
   end
 
   # The examples, named after their file unless @titles names them otherwise: the files
   # of @titles first, in this order, then the others by file name.
   @titles [
-    {"dispatcher_undecorated", "Server"},
-    {"dispatcher", "Server (with decorations)"},
-    {"dispatcher_errors", "Server (with errors)"},
+    {"server", "Server"},
+    {"server_decorated", "Server (with decorations)"},
+    {"server_errors", "Server (with errors)"},
     {"rpc", "Remote Procedure Call"},
     {"rpc_errors", "Remote Procedure Call (errors)"},
     {"run_job", "run_job (no best decoration)"},
@@ -113,7 +125,11 @@ defmodule ProcessTypes.Web do
       {Enum.find_index(@titles, &(elem(&1, 0) == base)) || length(@titles), base}
     end)
     |> Enum.map(fn {base, path} ->
-      %{name: List.keyfind(@titles, base, 0, {base, base}) |> elem(1), source: File.read!(path)}
+      %{
+        name: List.keyfind(@titles, base, 0, {base, base}) |> elem(1),
+        file: base,
+        source: File.read!(path)
+      }
     end)
   end
 

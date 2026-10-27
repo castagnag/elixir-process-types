@@ -1,4 +1,4 @@
-# Section 2, the program of dispatcher.exs without any decoration: inference finds
+# Section 2, the program of server_decorated.exs without any decoration: inference finds
 # those of job, dispatcher, serve and loop, in under a second. The mailbox of loop,
 # the recursive type worker whose job component has unknown decorations, is found
 # from its use sites.
