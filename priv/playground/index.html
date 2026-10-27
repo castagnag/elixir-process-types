@@ -20,6 +20,7 @@
     --bad-bg: #fcebea;
     --kw: #2f4f9e;
     --atom: #8a5a00;
+    --mod: #1d6f6a;
     --cmt: #85858b;
     --ann: #8c1c3a;
     --sel: #c9d7f2;
@@ -41,6 +42,7 @@
       --bad-bg: #3a1d1b;
       --kw: #8fb0ff;
       --atom: #e0b35a;
+      --mod: #6cc4bc;
       --cmt: #7d7d84;
       --ann: #ec8aa5;
       --sel: #33415e;
@@ -175,6 +177,7 @@
   .kw { color: var(--kw); }
   .prim { color: var(--kw); font-weight: 600; }
   .atom { color: var(--atom); }
+  .mod { color: var(--mod); }
   .cmt { color: var(--cmt); font-style: italic; }
   .ann { color: var(--ann); }
   .results-pane { padding: 16px 20px 24px; overflow: auto; min-height: 0; }
@@ -285,24 +288,34 @@
   // Names this page to the server, which interrupts its previous check when a new one arrives.
   const CLIENT = Math.random().toString(36).slice(2);
 
-  // Highlighting: annotation lines (and their continuations) in bordeaux, as in the paper.
+  // Highlighting: the annotation keywords ($, $interface, $self_interface, $type) in bordeaux,
+  // as in the paper; the types after them (and their continuation lines) like the code, with
+  // the connectives and, or, not as keywords.
   const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const TOKEN = /(#.*$)|(:[A-Za-z_]\w*[?!]?)|\b(defmodule|defp|def|do|end|fn|receive|case|if|else|when|and|or|not)\b|\b(self|send|spawn)\b/g;
+  const TOKEN = /(#.*$)|(:[A-Za-z_]\w*[?!]?)|\b([A-Z]\w*)\b|\b(defmodule|defp|def|do|end|fn|receive|case|if|else|when|and|or|not)\b|\b(self|send|spawn)\b/g;
+  const TYPE_TOKEN = /(#.*$)|(:[A-Za-z_]\w*[?!]?)|\b([A-Z]\w*)\b|\b(and|or|not)\b()/g;
+  const DIRECTIVE = /^(\s*)(\$(?:interface|self_interface|type)?)/;
+
+  function tokens(line, pattern) {
+    let out = "", last = 0;
+    line.replace(pattern, (m, comment, atom, alias, keyword, primitive, offset) => {
+      const cls = comment ? "cmt" : atom ? "atom" : alias ? "mod" : keyword ? "kw" : "prim";
+      out += esc(line.slice(last, offset)) + `<span class="${cls}">${esc(m)}</span>`;
+      last = offset + m.length;
+      return m;
+    });
+    return out + esc(line.slice(last));
+  }
 
   function highlight(text) {
     let annotation = false;
     return text.split("\n").map((line) => {
       const trimmed = line.trimStart();
       annotation = trimmed.startsWith("$") || (annotation && /^(or|and)\b/.test(trimmed));
-      if (annotation) return `<span class="ann">${esc(line)}</span>`;
-      let out = "", last = 0;
-      line.replace(TOKEN, (m, comment, atom, keyword, primitive, offset) => {
-        const cls = comment ? "cmt" : atom ? "atom" : keyword ? "kw" : "prim";
-        out += esc(line.slice(last, offset)) + `<span class="${cls}">${esc(m)}</span>`;
-        last = offset + m.length;
-        return m;
-      });
-      return out + esc(line.slice(last));
+      if (!annotation) return tokens(line, TOKEN);
+      const d = DIRECTIVE.exec(line);
+      if (!d) return tokens(line, TYPE_TOKEN);
+      return esc(d[1]) + `<span class="ann">${esc(d[2])}</span>` + tokens(line.slice(d[0].length), TYPE_TOKEN);
     }).join("\n") + "\n";
   }
 
