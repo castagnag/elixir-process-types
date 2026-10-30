@@ -117,7 +117,7 @@ defmodule ProcessTypes.Web do
     {"server_errors", "Server (with errors)"},
     {"rpc", "Remote Procedure Call"},
     {"rpc_errors", "Remote Procedure Call (errors)"},
-    {"run_job_simple", "run_job (simple)"},
+    {"run_job_simple", "run_job (double arrow)"},
     {"run_job", "run_job (no best decoration)"},
     {"run_job_shared", "run_job (shared, no decorations)"}
   ]
