@@ -6,10 +6,12 @@ defmodule ProcessTypes.Web do
       GET  /examples  the programs of examples/, as [{"name", "file", "source"}], where
                       "file" is the file name without .exs
       GET  /docs      README.md and GRAMMAR.md, as [{"name", "source"}]
-      POST /check     {"source": ..., "mode": "infer" | "ground", "client": ...},
+      POST /check     {"source": ..., "mode": "infer" | "ground", "split": true | false,
+                      "client": ...},
                       answered by {"ok", "diagnostics", "functions", "main",
                       "main_bare"} or
-                      {"error"}; the mode is inference by default (GRAMMAR.md, §9), and
+                      {"error"}; the mode is inference by default (GRAMMAR.md, §9), "split"
+                      is false by default (experimental, GRAMMAR.md, §10), and
                       a check interrupts the previous one of the same "client"
 
   `mix playground` serves it on localhost. Checks run with limits of time and memory
@@ -47,7 +49,8 @@ defmodule ProcessTypes.Web do
     case conn.body_params do
       %{"source" => source} = params when is_binary(source) ->
         mode = if params["mode"] == "ground", do: :ground, else: :infer
-        json(conn, 200, check(source, mode: mode, client: params["client"]))
+        opts = [mode: mode, split: params["split"] == true, client: params["client"]]
+        json(conn, 200, check(source, opts))
 
       _ ->
         json(conn, 400, %{error: ~s(expected {"source": "..."})})
@@ -124,6 +127,7 @@ defmodule ProcessTypes.Web do
     {"mixing_correlation", "mixing_correlation"},
     {"mixing_multishot", "mixing_multishot"},
     {"mixing_write", "mixing_write"},
+    {"reply_server", "Reply server (experimental split)"},
     {"my_server", "MyServer (parametrized types)"}
   ]
 

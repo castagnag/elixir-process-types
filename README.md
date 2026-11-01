@@ -37,6 +37,9 @@ that mention recursive tuple types, such as lists (with provisional patches to t
 copied Descr, see [lib/vendor/README.md](lib/vendor/README.md)). With no decoration at
 all, [examples/run_job_shared.exs](examples/run_job_shared.exs) shows that two programs
 which no single decorated arrow can serve share one `run_job` annotated with two arrows.
+An experimental option, off by default, goes beyond the paper: it types a branch once per
+summand of its refined type, so that a tuple pattern keeps the correlation between
+components (GRAMMAR.md, §10, and [examples/reply_server.exs](examples/reply_server.exs)).
 
 ## Usage
 
@@ -47,6 +50,7 @@ mix deps.get
 mix typecheck examples/server_decorated.exs examples/server_errors.exs
 mix typecheck --ground examples/server_decorated.exs     # every decoration known
 mix typecheck --trace examples/counter.exs          # the constraints given to tallying
+mix typecheck --experimental-split examples/reply_server.exs   # GRAMMAR.md, §10
 mix test
 ```
 
@@ -106,6 +110,13 @@ project, and `scripts/vendor_descr.sh` refreshes it.
   graph of the annotation by partition refinement); the rules mint the fresh variables
   of i-app, pe-tuple, i-abs and i-spawn; a constraint without variables is still
   checked at once, and the others are solved together, at the end, by tallying.
+- **Splitting (experimental, off by default).** With the option `split`, a tuple pattern
+  that binds at least two variables gives one environment per summand of the matched type
+  (`Types.tuple_summands/2`, the normal form of Descr), and the body of the branch is typed
+  under each; a type with a variable at its top is not split (GRAMMAR.md, §10). The cost
+  is at most one typing of the body per summand: the examples do not change, and a server
+  with n summands that calls a function of n arrows, already costly for large n, takes up
+  to n times as long as one call on the union (21 s against 3 s at n = 16).
 - **Errors in inference mode.** When the deferred constraints have no solution, the
   errors are the constraints that make them unsatisfiable, in generation order: a binary
   search finds the shortest prefix without solution, its last constraint is reported

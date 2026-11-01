@@ -13,7 +13,8 @@ defmodule ProcessTypes do
 
   @doc """
   Checks a program given as a string. Options are those of `ProcessTypes.Checker.check/2`:
-  `mode: :infer` (the default) or `mode: :ground` (GRAMMAR.md, §9).
+  `mode: :infer` (the default) or `mode: :ground` (GRAMMAR.md, §9), and `split: true`
+  (experimental, GRAMMAR.md, §10).
   """
   def check_string(source, opts \\ []) do
     case Frontend.parse(source) do

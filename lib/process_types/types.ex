@@ -244,6 +244,30 @@ defmodule ProcessTypes.Types do
     end
   end
 
+  @doc """
+  The summands of a type `t` of tuples of arity `n`: a list of products whose union is
+  equivalent to `t`, under every substitution of its variables (GRAMMAR.md, §10). The
+  products are those of the normal form of `t`, in which Descr has merged those that differ
+  in one component. Returns `[t]` when `t` has no such form, because a variable occurs at
+  its top or it is not a type of tuples of arity `n`, and when it is empty.
+  """
+  def tuple_summands(t, n) do
+    u = unfold(t)
+    top_variable? = match?({:type_variables, _}, u) and not ground?(u)
+
+    with false <- top_variable?,
+         true <- tuple_of_arity?(u, n),
+         tuples = intersection(u, tuple(List.duplicate(term(), n))),
+         [_ | _] = summands <-
+           tuples
+           |> D.domain_to_args()
+           |> Enum.reject(fn components -> Enum.any?(components, &empty?/1) end) do
+      Enum.map(summands, &tuple/1)
+    else
+      _ -> [t]
+    end
+  end
+
   # Descr's eliminators do not take a recursive node: unfold it first, once is enough
   # for the equations of ProcessTypes.TypeGraph, whose bodies are never bare nodes.
   defp fun_apply(f, args), do: D.fun_apply(unfold(f), args)

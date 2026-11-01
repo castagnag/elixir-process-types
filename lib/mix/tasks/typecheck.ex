@@ -11,6 +11,8 @@ defmodule Mix.Tasks.Typecheck do
   By default the decorations are inferred (GRAMMAR.md, §9); `--ground` reads an
   undecorated arrow as `@[none(), term()]`. In inference mode, `--trace` also prints
   the constraints deferred to tallying, with the line of the rule that generated them.
+  In both modes, `--experimental-split` types a branch once per summand of its refined
+  type (GRAMMAR.md, §10).
 
   Exits with status 1 when some file has an error.
   """
@@ -21,9 +23,14 @@ defmodule Mix.Tasks.Typecheck do
 
   @impl true
   def run(args) do
-    case OptionParser.parse(args, strict: [ground: :boolean, trace: :boolean]) do
-      {opts, [_ | _] = paths, []} -> check(paths, opts)
-      _ -> Mix.raise("usage: mix typecheck [--ground] [--trace] FILE...")
+    strict = [ground: :boolean, trace: :boolean, experimental_split: :boolean]
+
+    case OptionParser.parse(args, strict: strict) do
+      {opts, [_ | _] = paths, []} ->
+        check(paths, opts)
+
+      _ ->
+        Mix.raise("usage: mix typecheck [--ground] [--trace] [--experimental-split] FILE...")
     end
   end
 
@@ -32,7 +39,9 @@ defmodule Mix.Tasks.Typecheck do
 
     errors? =
       Enum.reduce(paths, false, fn path, errors? ->
-        result = ProcessTypes.check_file(path, mode: mode)
+        result =
+          ProcessTypes.check_file(path, mode: mode, split: opts[:experimental_split] == true)
+
         if opts[:trace] && mode == :infer, do: trace(result, path)
         Mix.shell().info(ProcessTypes.report(result, path))
         errors? or result.diagnostics != []

@@ -4,7 +4,8 @@ defmodule ProcessTypes.ExamplesTest do
   # Each example must report errors exactly on the lines marked "# error:", in both
   # modes (GRAMMAR.md, §9), or only in the mode named by a line "# mode: infer" or
   # "# mode: ground". The tests of an example with a line "# slow: ..." are tagged
-  # :slow, and run only with mix test --include slow.
+  # :slow, and run only with mix test --include slow. An example with a line
+  # "# split: experimental" is checked with the option split (GRAMMAR.md, §10).
 
   for path <- Path.wildcard(Path.expand("../examples/*.exs", __DIR__)),
       source = File.read!(path),
@@ -23,7 +24,8 @@ defmodule ProcessTypes.ExamplesTest do
         |> Enum.filter(fn {line, _} -> line =~ "# error:" end)
         |> Enum.map(&elem(&1, 1))
 
-      result = ProcessTypes.check_string(source, mode: @mode)
+      split = source =~ ~r/^# split: experimental$/m
+      result = ProcessTypes.check_string(source, mode: @mode, split: split)
       lines = result.diagnostics |> Enum.map(& &1.line) |> Enum.uniq() |> Enum.sort()
       assert lines == expected, ProcessTypes.report(result, @path)
     end

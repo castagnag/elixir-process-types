@@ -5,48 +5,52 @@
 # reply type, is written twice. As in the paper, the type of the server is the
 # intersection of one instance of GenServer.server per clause of handle_call.
 # The state is {:current, n}, since the prototype has no maps.
-# Expected: rejected on the line marked "error:", accepted otherwise.
+#
+# loop is the text of the paper. It needs the experimental option that types its branch once
+# per kind of request (GRAMMAR.md, §10), since otherwise the reply address w has type
+# pid(integer()) or pid(:ok), to which only none() can be sent:
+# mix typecheck --experimental-split examples/my_server.exs
+# split: experimental
+# Expected, with the option: rejected on the line marked "error:", accepted otherwise.
 
 defmodule GenServer do
-  $type request(c, r)     = {c, pid(r)}
-  $type server(c, r)      = pid(request(c, r))
-  $type result(r, s)      = {:reply, r, s} or {:noreply, s}
-  $type callback(c, r, s) = (c, pid(r), s -> result(r, s))@[none(), term()]
-  $type module(a, h, s)   = {(a -> {:ok, s}), h}
+  # handle_call_t(c, r, s) is the type of the callback handle_call, for a request in c and a
+  # reply in r: its arguments are in c, pid(r) and s. The suffix _t marks a type that has
+  # the name of a function.
+  $type request(c, r)          = {c, pid(r)}
+  $type server(c, r)           = pid(request(c, r))
+  $type result(r, s)           = {:reply, r, s} or {:noreply, s}
+  $type handle_call_t(c, r, s) = (c, pid(r), s -> result(r, s))@[none(), term()]
+  $type module(a, h, s)        = {(a -> {:ok, s}), h}
 
   # MyServer's instances: one arrow and one kind of request per clause of handle_call.
-  $type state       = MyServer.state
-  $type get_handler = callback(:get_int, integer(), state)
-  $type set_handler = callback({:set_int, integer()}, :ok, state)
-  $type get_request = request(:get_int, integer())
-  $type set_request = request({:set_int, integer()}, :ok)
-  $type handler     = get_handler and set_handler
-  $type requests    = get_request or set_request
-
-  $ (get_handler, get_request, state -> state)
-  and (set_handler, set_request, state -> state)
-  def step(h, {c, w}, s) do
-    case h.(c, w, s) do
-      {:reply, r, s2} -> send(w, r); s2
-      {:noreply, s2}  -> s2
-    end
-  end
+  $type state            = MyServer.state
+  $type handle_get_t     = handle_call_t(:get_int, integer(), state)
+  $type handle_set_t     = handle_call_t({:set_int, integer()}, :ok, state)
+  $type get_request      = request(:get_int, integer())
+  $type set_request      = request({:set_int, integer()}, :ok)
+  $type my_handle_call_t = handle_get_t and handle_set_t
+  $type requests         = get_request or set_request
 
   # Reads the mailbox of the server: one process, hence one interface.
-  $ (handler, state -> none())@[none(), requests]
+  $ (my_handle_call_t, state -> none())@[none(), requests]
   def loop(h, s) do
     receive do
-      {_, _} = y -> loop(h, step(h, y, s))
+      {c, w} ->
+        case h.(c, w, s) do
+          {:reply, r, s2} -> send(w, r); loop(h, s2)
+          {:noreply, s2}  -> loop(h, s2)
+        end
     end
   end
 
-  $ handler, state -> MyServer.server
+  $ my_handle_call_t, state -> MyServer.server
   def serve(h, s) do
     $interface requests
     spawn(fn -> loop(h, s) end)
   end
 
-  $ module(integer(), handler, state), integer() -> {:ok, MyServer.server}
+  $ module(integer(), my_handle_call_t, state), integer() -> {:ok, MyServer.server}
   def start_link(m, v) do
     {i, h} = m
     {:ok, s} = i.(v)
@@ -68,7 +72,7 @@ defmodule MyServer do
   def handle_call({:set_int, v}, _from, _s), do: {:reply, :ok, {:current, v}}
 
   # The module as a value.
-  $ (-> GenServer.module(integer(), GenServer.handler, state))
+  $ (-> GenServer.module(integer(), GenServer.my_handle_call_t, state))
   def module() do
     $ integer() -> {:ok, state}
     i = fn v -> init(v) end

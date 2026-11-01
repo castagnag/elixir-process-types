@@ -106,7 +106,8 @@ defmodule ProcessTypes.InferTest do
     for path <- Path.wildcard(Path.expand("../examples/*.exs", __DIR__)),
         source = File.read!(path),
         not (source =~ ~r/^# slow:/m) do
-      assert lines(source, app: :literal) == lines(source), path
+      split = source =~ ~r/^# split: experimental$/m
+      assert lines(source, app: :literal, split: split) == lines(source, split: split), path
     end
 
     for interfaces <- [["{:half, integer()}"], ["{:half, term()}"]] do
@@ -121,8 +122,10 @@ defmodule ProcessTypes.InferTest do
     for path <- Path.wildcard(Path.expand("../examples/*.exs", __DIR__)),
         Path.basename(path) not in ["server.exs", "my_server.exs"],
         source = File.read!(path) do
-      assert lines(source, eliminate: false, tally: :all) == lines(source), path
-      assert lines(source, eliminate: false) == lines(source), path
+      split = source =~ ~r/^# split: experimental$/m
+      opts = [split: split]
+      assert lines(source, [eliminate: false, tally: :all] ++ opts) == lines(source, opts), path
+      assert lines(source, [eliminate: false] ++ opts) == lines(source, opts), path
     end
   end
 

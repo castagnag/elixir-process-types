@@ -267,6 +267,8 @@ Named functions are recursive through their annotations: the calculus has no rec
 and encodes it with a fixpoint combinator (Section 3), which the annotations make
 unnecessary here.
 
+An experimental option changes how t-case and t-receive type a tuple pattern: see §10.
+
 ## 8. Deviations from the paper, and what is not supported
 
 Descr, the type representation of the Elixir compiler, imposes one deviation.
@@ -304,3 +306,47 @@ after`; `cond`, `with`, `for`, `try` and `unless`; captures `&f/1`; default argu
   `@[none(), term()]`, an unannotated `fn` runs at the bracket of its expected type
   (§6), and the body of a `spawn` with interface t, like the main process, runs at
   [t, t]. Every constraint is checked at once.
+
+The experimental option of §10 is available in both modes.
+
+## 10. Experimental: splitting by summands
+
+*An extension of the paper, off by default.* It is turned on by `--experimental-split` in
+`mix typecheck`, by `"split": true` in `POST /check`, by the checkbox "experimental split"
+of the playground, and by `split: true` in `ProcessTypes.check_string/2`. An example with
+the line `# split: experimental` is checked with the option by the tests, and turns the
+checkbox on when the playground loads it; for the language this line is a comment.
+
+Rules t-case and t-receive type a tuple pattern by projection, which loses the correlation
+between components: on `{:a, pid(:r)} or {:b, pid(:s)}`, the pattern `{c, w}` gives w the
+type `pid(:r) or pid(:s)`, to which only `none()` can be sent. With the option, each branch
+j, whose refined type r_j is that of the rules, is typed by
+
+```
+r_j ≃ ⋁ₖ r_{j,k}     Γ, ptenv(r_{j,k}, p_j) ⊢ e_j : t   for every k
+```
+
+for clauses of functions, `fn`, `case` and `receive`, and for `p = e; b`, which is a
+`case` (§7): there the rest of the block is typed once per summand. The type of the branch
+is the union of the types of its body.
+
+- The summands are those of the normal form of r_j. A summand that is empty for every
+  substitution is dropped.
+- A pattern is split when it is a tuple pattern, or an intersection pattern with a tuple
+  pattern among its operands, and binds at least two variables. An intersection pattern is
+  split before its operands, so that `{a, b} = y` correlates y with a and b. The rule is
+  applied again to the components, for nested tuple patterns. Summands that give the same
+  types to the variables of the pattern give one premise.
+- This is not union elimination. `{_, x}` binds one variable and gets its projection, a
+  variable pattern is not split, and Descr merges the products that differ in one component
+  when it builds a union: `{:a, pid(:r)} or {:a, pid(:s)}` is the single product
+  `{:a, pid(:r) or pid(:s)}`, so in `{c, w}` the variable w has that union type.
+- Type variables may occur under the constructors of r_j, as the undecorated arrows of an
+  interface make them do in inference mode: the normal form holds under every substitution,
+  and so do the premises. A variable at the top of r_j has no normal form, and the rule is
+  not applied: pe-tuple keeps its fresh projections. So in inference mode a spawned body
+  that reads its mailbox directly, `spawn(fn -> receive do … end end)`, is not split, since
+  it runs at a fresh bracket (rule i-spawn), whereas in ground mode it runs at [t, t] and is.
+  To have it split in inference mode, move the body to a `def` with a written bracket.
+- A body is typed once per summand, so an error may appear on one line once per summand, and
+  k successive splits of n summands type the rest of a block nᵏ times.

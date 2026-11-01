@@ -35,9 +35,11 @@ defmodule ProcessTypes.Checker do
   end
 
   @doc """
-  Checks a program. Options: `mode: :infer | :ground` (default `:infer`), and, for
-  inference, `app: :literal | :compact` (see `ProcessTypes.Backend.Infer`) and
-  `solve: false`, which skips tallying (to inspect the constraints).
+  Checks a program. Options: `mode: :infer | :ground` (default `:infer`), `split: true`,
+  which types a branch once per summand of its refined type (experimental, off by default:
+  GRAMMAR.md, §10), and, for inference, `app: :literal | :compact` (see
+  `ProcessTypes.Backend.Infer`) and `solve: false`, which skips tallying (to inspect the
+  constraints).
   """
   def check(%Program{} = program, opts \\ []) do
     mode = Keyword.get(opts, :mode, :infer)
@@ -56,6 +58,7 @@ defmodule ProcessTypes.Checker do
       program: program,
       sigs: sigs,
       names: names,
+      split: Keyword.get(opts, :split, false),
       module: nil,
       env: %{},
       o: nil,
@@ -205,8 +208,12 @@ defmodule ProcessTypes.Checker do
         if Types.empty?(r) do
           {covered, types, st}
         else
-          {env, st} = penv(ctx, st, r, p, meta[:line])
-          {u, st} = block(%{ctx | env: Map.merge(ctx.env, env)}, st, body, opts[:expected])
+          {envs, st} = penv(ctx, st, r, p, meta[:line])
+
+          {u, st} =
+            per_env(st, envs, fn env, st ->
+              block(%{ctx | env: Map.merge(ctx.env, env)}, st, body, opts[:expected])
+            end)
 
           st =
             case opts[:bound] do
@@ -243,6 +250,14 @@ defmodule ProcessTypes.Checker do
     {Types.union_all(types), st}
   end
 
+  # What the scope of a pattern types once per environment: the union of the results.
+  defp per_env(st, [env], typing), do: typing.(env, st)
+
+  defp per_env(st, envs, typing) do
+    {types, st} = Enum.map_reduce(envs, st, typing)
+    {Types.union_all(types), st}
+  end
+
   defp single([p]), do: p
   defp single(ps), do: {:ptuple, [], ps}
 
@@ -259,13 +274,40 @@ defmodule ProcessTypes.Checker do
   defp lower({:pand, _, p1, p2}), do: Types.intersection(lower(p1), lower(p2))
   defp lower(p), do: upper(p)
 
-  # The pattern environment: the rules pe-var, pe-test, pe-and and pe-tuple of
-  # Section 8.2.1. The constraint of pe-test holds whenever the matched type is a
-  # refined type r_j, which is below ⌈p_j⌉; it is emitted as the rule states it.
-  defp penv(_ctx, st, t, {:pvar, _, x}, _line), do: {%{x => t}, st}
-  defp penv(_ctx, st, _t, {:pwild, _}, _line), do: {%{}, st}
+  # The pattern environments, one per summand of the matched type that the pattern splits
+  # (GRAMMAR.md, §10); only one without the option split.
+  defp penv(ctx, st, t, p, line) do
+    {envs, st} =
+      ctx
+      |> summands(t, p)
+      |> Enum.map_reduce(st, fn summand, st -> pattern_env(ctx, st, summand, p, line) end)
 
-  defp penv(ctx, st, t, {:ptuple, _, ps}, line) do
+    {envs |> Enum.concat() |> Enum.uniq(), st}
+  end
+
+  defp summands(%{split: true}, t, p) do
+    n = tuple_arity(p)
+    if n && binders(p) >= 2, do: Types.tuple_summands(t, n), else: [t]
+  end
+
+  defp summands(_ctx, t, _p), do: [t]
+
+  defp tuple_arity({:ptuple, _, ps}), do: length(ps)
+  defp tuple_arity({:pand, _, p1, p2}), do: tuple_arity(p1) || tuple_arity(p2)
+  defp tuple_arity(_p), do: nil
+
+  defp binders({:pvar, _, _}), do: 1
+  defp binders({:ptuple, _, ps}), do: ps |> Enum.map(&binders/1) |> Enum.sum()
+  defp binders({:pand, _, p1, p2}), do: binders(p1) + binders(p2)
+  defp binders(_p), do: 0
+
+  # The rules pe-var, pe-test, pe-and and pe-tuple of Section 8.2.1. The constraint of
+  # pe-test holds whenever the matched type is a refined type r_j, which is below ⌈p_j⌉;
+  # it is emitted as the rule states it.
+  defp pattern_env(_ctx, st, t, {:pvar, _, x}, _line), do: {[%{x => t}], st}
+  defp pattern_env(_ctx, st, _t, {:pwild, _}, _line), do: {[%{}], st}
+
+  defp pattern_env(ctx, st, t, {:ptuple, _, ps}, line) do
     {components, st} =
       ctx.backend.projections(st, t, length(ps), line, fn inst ->
         Diagnostic.error(line, "this pattern cannot match #{show(ctx, inst.(t))}")
@@ -273,19 +315,19 @@ defmodule ProcessTypes.Checker do
 
     ps
     |> Enum.zip(components)
-    |> Enum.reduce({%{}, st}, fn {p, component}, {env, st} ->
-      {env_k, st} = penv(ctx, st, component, p, line)
-      {Map.merge(env, env_k), st}
+    |> Enum.reduce({[%{}], st}, fn {p, component}, {envs, st} ->
+      {envs_k, st} = penv(ctx, st, component, p, line)
+      {merge_envs(envs, envs_k), st}
     end)
   end
 
-  defp penv(ctx, st, t, {:pand, _, p1, p2}, line) do
-    {env1, st} = penv(ctx, st, t, p1, line)
-    {env2, st} = penv(ctx, st, t, p2, line)
-    {Map.merge(env1, env2), st}
+  defp pattern_env(ctx, st, t, {:pand, _, p1, p2}, line) do
+    {envs1, st} = pattern_env(ctx, st, t, p1, line)
+    {envs2, st} = pattern_env(ctx, st, t, p2, line)
+    {merge_envs(envs1, envs2), st}
   end
 
-  defp penv(ctx, st, t, p, line) do
+  defp pattern_env(ctx, st, t, p, line) do
     tau = upper(p)
 
     st =
@@ -293,39 +335,39 @@ defmodule ProcessTypes.Checker do
         Diagnostic.error(line, "this pattern cannot match #{show(ctx, inst.(t))}")
       end)
 
-    {%{}, st}
+    {[%{}], st}
   end
+
+  defp merge_envs(envs1, envs2), do: for(e1 <- envs1, e2 <- envs2, do: Map.merge(e1, e2))
 
   # Blocks: a statement p = e is a case with one exhaustive clause whose scope is the
   # rest of the block.
-  defp block(ctx, st, stmts, expected) do
-    last = length(stmts) - 1
+  defp block(ctx, st, stmts, expected), do: statements(ctx, st, stmts, Types.none(), expected)
 
-    {_, type, st} =
-      stmts
-      |> Enum.with_index()
-      |> Enum.reduce({ctx, Types.none(), st}, fn
-        {{:expr, e}, k}, {ctx, _, st} ->
-          {u, st} = synth(ctx, st, e, if(k == last, do: expected))
-          {ctx, u, st}
+  defp statements(_ctx, st, [], type, _expected), do: {type, st}
 
-        {{:match, meta, p, e}, _}, {ctx, _, st} ->
-          {u, st} = synth(ctx, st, e, nil)
+  defp statements(ctx, st, [{:expr, e} | rest], _type, expected) do
+    {u, st} = synth(ctx, st, e, if(rest == [], do: expected))
+    statements(ctx, st, rest, u, expected)
+  end
 
-          st =
-            ctx.backend.require_subtype(st, u, lower(p), meta[:line], fn inst ->
-              Diagnostic.error(
-                meta[:line],
-                "this match may fail: #{show(ctx, Types.difference(inst.(u), lower(p)))} does not match the pattern"
-              )
-            end)
+  defp statements(ctx, st, [{:match, meta, p, e} | rest], _type, expected) do
+    {u, st} = synth(ctx, st, e, nil)
 
-          r = Types.intersection(u, upper(p))
-          {env, st} = penv(ctx, st, r, p, meta[:line])
-          {%{ctx | env: Map.merge(ctx.env, env)}, r, st}
+    st =
+      ctx.backend.require_subtype(st, u, lower(p), meta[:line], fn inst ->
+        Diagnostic.error(
+          meta[:line],
+          "this match may fail: #{show(ctx, Types.difference(inst.(u), lower(p)))} does not match the pattern"
+        )
       end)
 
-    {type, st}
+    r = Types.intersection(u, upper(p))
+    {envs, st} = penv(ctx, st, r, p, meta[:line])
+
+    per_env(st, envs, fn env, st ->
+      statements(%{ctx | env: Map.merge(ctx.env, env)}, st, rest, r, expected)
+    end)
   end
 
   # Expressions

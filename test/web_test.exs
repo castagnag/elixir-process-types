@@ -106,6 +106,30 @@ defmodule ProcessTypes.WebTest do
     assert %{"ok" => false, "diagnostics" => [%{"line" => 2}]} = JSON.decode!(conn.resp_body)
   end
 
+  test "the experimental option split is off unless the request asks for it" do
+    lines = fn body ->
+      conn = call(:post, "/check", body)
+      conn.resp_body |> JSON.decode!() |> Map.fetch!("diagnostics") |> Enum.map(& &1["line"])
+    end
+
+    source = """
+    defmodule P do
+      $ ({:a, pid(:r)} or {:b, pid(:s)} -> term())
+      def f({c, w}), do: send(w, c)
+    end
+    """
+
+    assert lines.(%{source: source}) == [3]
+    assert lines.(%{source: source, split: false}) == [3]
+    assert 3 in lines.(%{source: source, split: true})
+
+    # The server of the example is accepted only with the option.
+    example = File.read!("examples/reply_server.exs")
+    server = Enum.find_index(String.split(example, "\n"), &(&1 =~ "defmodule ReplyServer")) + 1
+    assert Enum.any?(lines.(%{source: example}), &(&1 < server + 10))
+    refute Enum.any?(lines.(%{source: example, split: true}), &(&1 < server + 10))
+  end
+
   test "a check interrupts the previous one of the same client, not those of others" do
     slow = File.read!("examples/server.exs")
     first = Task.async(fn -> Web.check(slow, client: "a") end)
