@@ -119,7 +119,12 @@ defmodule ProcessTypes.Web do
     {"rpc_errors", "Remote Procedure Call (errors)"},
     {"run_job_simple", "run_job (double arrow)"},
     {"run_job", "run_job (no best decoration)"},
-    {"run_job_shared", "run_job (shared, no decorations)"}
+    {"run_job_shared", "run_job (shared, no decorations)"},
+    {"counter", "counter"},
+    {"mixing_correlation", "mixing_correlation"},
+    {"mixing_multishot", "mixing_multishot"},
+    {"mixing_write", "mixing_write"},
+    {"my_server", "MyServer (parametrized types)"}
   ]
 
   defp examples do

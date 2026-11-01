@@ -29,15 +29,17 @@ defmodule ProcessTypes.Frontend do
   translated into `case`, and guards into intersection patterns.
   """
 
-  alias ProcessTypes.{Annotations, Diagnostic, Types}
+  alias ProcessTypes.{Annotations, Diagnostic, TypeGraph, Types}
 
   defmodule Program do
     @moduledoc """
     A parsed program: its modules (in order), its functions by `{module, name, arity}`,
-    its type definitions by `{module | nil, name}`, the statements of the main process,
-    and the declared interface of the main process.
+    its type definitions by `{module | nil, name}`, the instances that its annotations
+    reach, as `{module | nil, {:inst, key, args}}` with the module of the annotation
+    (`ProcessTypes.TypeGraph.instances/3`), the statements of the main process, and the
+    declared interface of the main process.
     """
-    defstruct modules: [], funs: %{}, types: %{}, main: [], self_interface: nil
+    defstruct modules: [], funs: %{}, types: %{}, instances: [], main: [], self_interface: nil
   end
 
   defmodule Fun do
@@ -95,10 +97,13 @@ defmodule ProcessTypes.Frontend do
     forms = block_forms(ast)
     {attach, diags} = attachments(ast, annotations)
     {types, self_interface, diags} = declarations(annotations, forms, diags)
+    {types, diags} = regular(types, diags)
+    instances = instances(annotations, types, forms)
     cx = %{attach: attach, module: nil}
+    empty = %Program{types: types, instances: instances, self_interface: self_interface}
 
     {program, diags} =
-      Enum.reduce(forms, {%Program{types: types, self_interface: self_interface}, diags}, fn
+      Enum.reduce(forms, {empty, diags}, fn
         {:defmodule, _, _} = form, {program, diags} ->
           module(form, cx, program, diags)
 
@@ -116,18 +121,55 @@ defmodule ProcessTypes.Frontend do
   defp block_forms(nil), do: []
   defp block_forms(form), do: [form]
 
-  # Type definitions and the interface of the main process, scoped by the module
-  # whose lines contain them.
-  defp declarations(annotations, forms, diags) do
+  # The module whose lines contain a line, as a function; nil at top level.
+  defp scope(forms) do
     modules =
       for {:defmodule, meta, [{:__aliases__, _, parts} | _]} <- forms,
           do: {Module.concat(parts), meta[:line], get_in(meta, [:end, :line]) || meta[:line]}
 
-    scope = fn line ->
+    fn line ->
       Enum.find_value(modules, fn {module, first, last} ->
         if line >= first and line <= last, do: module
       end)
     end
+  end
+
+  # An irregular definition is reported on its line; its uses are errors, not loops.
+  defp regular(types, diags) do
+    {types, irregular} = TypeGraph.reject_irregular(types)
+
+    more =
+      for {{_, name} = key, x} <- irregular do
+        {_, line} = Map.fetch!(types, key)
+
+        Diagnostic.error(
+          line,
+          "the definition of #{name} is not regular: it has infinitely many instances, " <>
+            "since on a cycle of its uses the parameter #{x} occurs strictly inside an argument"
+        )
+      end
+
+    {types, diags ++ Enum.sort_by(more, & &1.line)}
+  end
+
+  defp instances(annotations, types, forms) do
+    if Enum.any?(types, &match?({_, {{:lambda, _, _}, _}}, &1)) do
+      scope = scope(forms)
+
+      for %{type: type, line: line} <- annotations,
+          not match?({:lambda, _, _}, type),
+          inst <- TypeGraph.instances(type, types, scope.(line)),
+          uniq: true,
+          do: {scope.(line), inst}
+    else
+      []
+    end
+  end
+
+  # Type definitions and the interface of the main process, scoped by the module
+  # whose lines contain them.
+  defp declarations(annotations, forms, diags) do
+    scope = scope(forms)
 
     Enum.reduce(annotations, {%{}, nil, diags}, fn
       %{kind: :type, name: name, type: type, line: line}, {types, self, diags} ->

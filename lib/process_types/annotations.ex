@@ -11,8 +11,9 @@ defmodule ProcessTypes.Annotations do
   defmodule Annotation do
     @moduledoc """
     An annotation: its `kind` (`:type`, `:fun`, `:interface` or `:self_interface`),
-    the `name` it defines (for `:type`), its source `type`, the lines it spans, and
-    for `:fun` and `:interface` the `target` line it attaches to.
+    the `name` it defines (for `:type`), its source `type` (for a definition with
+    parameters, `{:lambda, params, type}`), the lines it spans, and for `:fun` and
+    `:interface` the `target` line it attaches to.
     """
     defstruct [:kind, :name, :type, :line, :last_line, :target]
   end
@@ -121,8 +122,15 @@ defmodule ProcessTypes.Annotations do
         [_, name, body] = match
         with {:ok, type} <- parse_type(body), do: {:ok, :type, String.to_atom(name), type}
 
+      match = Regex.run(~r/^\$type\s+([a-z_][a-zA-Z0-9_]*)\s*\(([^()]*)\)\s*=(.*)$/s, text) ->
+        [_, name, params, body] = match
+
+        with {:ok, params} <- parse_params(name, params),
+             {:ok, type} <- parse_type(body),
+             do: {:ok, :type, String.to_atom(name), {:lambda, params, type}}
+
       String.starts_with?(text, "$type") ->
-        {:error, "a type definition is written $type name = T"}
+        {:error, "a type definition is written $type name = T or $type name(x, ..., x) = T"}
 
       match = Regex.run(~r/^\$self_interface\b(.*)$/s, text) ->
         with {:ok, type} <- parse_type(Enum.at(match, 1)), do: {:ok, :self_interface, nil, type}
@@ -136,6 +144,16 @@ defmodule ProcessTypes.Annotations do
       true ->
         {:error, "unknown annotation: #{text}"}
     end
+  end
+
+  defp parse_params("pid", _), do: {:error, "pid is a built-in type"}
+
+  defp parse_params(_name, params) do
+    params = params |> String.split(",") |> Enum.map(&String.trim/1)
+
+    if Enum.all?(params, &(&1 =~ ~r/^[a-z_][a-zA-Z0-9_]*$/)) and params == Enum.uniq(params),
+      do: {:ok, Enum.map(params, &String.to_atom/1)},
+      else: {:error, "the parameters of a type definition are one or more distinct names"}
   end
 
   @doc """

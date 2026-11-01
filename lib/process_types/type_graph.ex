@@ -19,6 +19,14 @@ defmodule ProcessTypes.TypeGraph do
 
   Printed recursive types, `{:rec, x, t}` with `{:recvar, x}` for the occurrences of x
   in t, are read back in the same way, x being a definition local to t.
+
+  A definition with parameters is expanded per instance, as MLsem does: an instance is
+  the definition and its closed arguments (`close/4`), one node each, so Descr only sees
+  what could have been written by hand, and a parameter never reaches it. Decoration
+  classes and contractiveness are computed on the expanded graph. The instances of a
+  type are finite if the definitions are regular (`irregular/1`, which
+  `ProcessTypes.Frontend` runs on the definitions of a program: the functions below
+  must not be given definitions that it rejects).
   """
 
   import Kernel, except: [to_string: 1]
@@ -49,6 +57,51 @@ defmodule ProcessTypes.TypeGraph do
     {:ok, Enum.map(tops, &arrow_parts(g, descrs, &1, nil))}
   catch
     {:type_syntax, message} -> {:error, message}
+  end
+
+  @doc """
+  The definitions that break regularity (GRAMMAR.md, §5.3), as `{key, parameter}` with
+  the parameter whose flow is expansive. A definition whose body has an error (an
+  unknown name, a wrong number of arguments) has no flow: it cannot be expanded at all.
+  """
+  def irregular(defs) do
+    edges =
+      for {key, {{:lambda, params, _}, _}} <- defs,
+          edge <- body_flows(key, params, defs),
+          do: edge
+
+    for {{:param, key, x} = from, to, true} <- edges,
+        reaches?(edges, to, from, MapSet.new()),
+        uniq: true,
+        do: {key, x}
+  end
+
+  @doc """
+  Replaces each definition that `irregular/1` finds by a body whose every use is an
+  error, and returns the definitions with the keys and parameters found.
+  """
+  def reject_irregular(defs) do
+    found = irregular(defs)
+
+    defs =
+      Enum.reduce(found, defs, fn {key, _}, defs ->
+        Map.update!(defs, key, fn {{:lambda, params, _}, line} ->
+          {{:lambda, params, {:irregular, key}}, line}
+        end)
+      end)
+
+    {defs, found}
+  end
+
+  @doc """
+  The closed instances (with arguments) reached from `t`, in the order of the build, as
+  `{:inst, key, args}`; none if `t` has an error.
+  """
+  def instances(t, defs, scope) do
+    {g, _root} = build(t, defs, scope)
+    for {{key, [_ | _] = args}, _id} <- Enum.sort_by(g.memo, &elem(&1, 1)), do: {:inst, key, args}
+  catch
+    {:type_syntax, _} -> []
   end
 
   @doc """
@@ -121,21 +174,39 @@ defmodule ProcessTypes.TypeGraph do
     {g, root}
   end
 
-  defp node({:name, _, _} = name, scope, _recs, g) do
-    {key, body, body_scope} = resolve(name, g.defs, scope)
+  defp node({:name, _, _} = name, scope, recs, g),
+    do: node(close(name, scope, %{}, g.defs), scope, recs, g)
+
+  defp node({:app, _, _, _} = app, scope, recs, g),
+    do: node(close(app, scope, %{}, g.defs), scope, recs, g)
+
+  # One node per instance. A plain body keeps its source, for messages.
+  defp node({:inst, key, args} = inst, _scope, _recs, g) do
+    instance = {key, args}
 
     case g.memo do
-      %{^key => id} ->
+      %{^instance => id} ->
         {id, g}
 
       %{} ->
-        {id, g} = new(g, :alias, [], name)
-        g = %{g | memo: Map.put(g.memo, key, id), names: Map.put(g.names, id, key)}
+        {id, g} = new(g, :alias, [], inst)
+        g = %{g | memo: Map.put(g.memo, instance, id), names: Map.put(g.names, id, key)}
+        {params, body} = definition(g.defs, key)
+        body_scope = elem(key, 0)
+
+        body =
+          if params == [],
+            do: body,
+            else: close(body, body_scope, Map.new(Enum.zip(params, args)), g.defs)
+
         # The local definitions of a printed type do not reach into a type definition.
         {child, g} = node(body, body_scope, %{}, g)
         {id, put_in(g.nodes[id], {:alias, [child]})}
     end
   end
+
+  defp node({:irregular, key}, _scope, _recs, _g),
+    do: bad("the definition of #{key_to_string(key)} is not regular")
 
   defp node({:rec, x, body} = t, scope, recs, g) do
     {id, g} = new(g, :alias, [], t)
@@ -206,18 +277,103 @@ defmodule ProcessTypes.TypeGraph do
     {id, g}
   end
 
-  defp resolve({:name, module, name}, defs, scope) do
-    key =
-      cond do
-        module != nil and Map.has_key?(defs, {module, name}) -> {module, name}
-        module != nil -> bad("unknown type #{inspect(module)}.#{name}")
-        scope != nil and Map.has_key?(defs, {scope, name}) -> {scope, name}
-        Map.has_key?(defs, {nil, name}) -> {nil, name}
-        true -> bad("unknown type #{name}")
-      end
+  defp resolve(module, name, defs, scope) do
+    cond do
+      module != nil and Map.has_key?(defs, {module, name}) -> {module, name}
+      module != nil -> bad("unknown type #{inspect(module)}.#{name}")
+      scope != nil and Map.has_key?(defs, {scope, name}) -> {scope, name}
+      Map.has_key?(defs, {nil, name}) -> {nil, name}
+      true -> bad("unknown type #{name}")
+    end
+  end
 
-    {body, _line} = Map.fetch!(defs, key)
-    {key, body, elem(key, 0)}
+  defp definition(defs, key) do
+    case Map.fetch!(defs, key) do
+      {{:lambda, params, body}, _line} -> {params, body}
+      {body, _line} -> {[], body}
+    end
+  end
+
+  # The source type t with its parameters replaced (env) and its names resolved in
+  # scope: the arguments of an instance depend on no scope, so that they mean the same
+  # in the body of the definition, and two equal instances are the same key.
+  defp close({:name, nil, x}, _scope, env, _defs) when is_map_key(env, x), do: env[x]
+  defp close({:name, m, n}, scope, env, defs), do: close({:app, m, n, []}, scope, env, defs)
+
+  defp close({:app, m, n, args}, scope, env, defs) do
+    key = resolve(m, n, defs, scope)
+    {params, _} = definition(defs, key)
+
+    if length(params) != length(args), do: bad(arity_message(key, params, args))
+
+    {:inst, key, Enum.map(args, &close(&1, scope, env, defs))}
+  end
+
+  defp close(t, scope, env, defs), do: map_children(t, &close(&1, scope, env, defs))
+
+  defp arity_message(key, params, args) do
+    n = length(params)
+    "the type #{key_to_string(key)} takes #{n} argument#{if n != 1, do: "s"}, not #{length(args)}"
+  end
+
+  @doc "The source type `t` with `f` applied to its immediate subterms."
+  def map_children({:tuple, ts}, f), do: {:tuple, Enum.map(ts, f)}
+  def map_children({:pid, :none} = t, _f), do: t
+  def map_children({:pid, t}, f), do: {:pid, f.(t)}
+  def map_children({:not, a}, f), do: {:not, f.(a)}
+  def map_children({op, a, b}, f) when op in [:or, :and], do: {op, f.(a), f.(b)}
+  def map_children({:inst, key, args}, f), do: {:inst, key, Enum.map(args, f)}
+
+  def map_children({:arrow, args, ret, decorations}, f) do
+    decorations = with {o, i} <- decorations, do: {f.(o), f.(i)}
+    {:arrow, Enum.map(args, f), f.(ret), decorations}
+  end
+
+  def map_children(t, _f), do: t
+
+  defp children({:tuple, ts}), do: ts
+  defp children({:pid, :none}), do: []
+  defp children({:pid, t}), do: [t]
+  defp children({:not, a}), do: [a]
+  defp children({op, a, b}) when op in [:or, :and], do: [a, b]
+  defp children({:inst, _key, args}), do: args
+  defp children({:arrow, args, ret, nil}), do: args ++ [ret]
+  defp children({:arrow, args, ret, {o, i}}), do: args ++ [ret, o, i]
+  defp children(_t), do: []
+
+  # Regularity. The body is closed with each parameter standing for itself, which gives
+  # the instances of the body in closed form, and the flow from the parameters of the
+  # definition to those of the definitions it instantiates, as {from, to, expansive?}.
+  defp body_flows(key, params, defs) do
+    {_, body} = definition(defs, key)
+    env = Map.new(params, &{&1, {:param, key, &1}})
+    flows(close(body, elem(key, 0), env, defs), defs)
+  catch
+    {:type_syntax, _} -> []
+  end
+
+  defp flows({:inst, callee, args} = t, defs) do
+    {params, _} = definition(defs, callee)
+
+    here =
+      for {y, arg} <- Enum.zip(params, args),
+          from <- Enum.uniq(params_of(arg)),
+          do: {from, {:param, callee, y}, arg != from}
+
+    here ++ Enum.flat_map(children(t), &flows(&1, defs))
+  end
+
+  defp flows(t, defs), do: Enum.flat_map(children(t), &flows(&1, defs))
+
+  defp params_of({:param, _, _} = x), do: [x]
+  defp params_of(t), do: Enum.flat_map(children(t), &params_of/1)
+
+  defp reaches?(_edges, x, x, _seen), do: true
+
+  defp reaches?(edges, x, y, seen) do
+    Enum.any?(edges, fn {from, to, _} ->
+      from == x and not MapSet.member?(seen, to) and reaches?(edges, to, y, MapSet.put(seen, to))
+    end)
   end
 
   # Every alias is replaced by the root of its body; the name moves to that root. A

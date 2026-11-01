@@ -116,9 +116,10 @@ defmodule ProcessTypes.InferTest do
 
   test "eliminating variables and searching for one solution give the same verdicts" do
     # The examples, except server, on which tallying all the solutions
-    # of all the variables takes too long (30 to 50 s already when loop was decorated).
+    # of all the variables takes too long (30 to 50 s already when loop was decorated),
+    # and my_server, on which these two checks add 16 s (same verdicts, 2026-11-01).
     for path <- Path.wildcard(Path.expand("../examples/*.exs", __DIR__)),
-        Path.basename(path) != "server.exs",
+        Path.basename(path) not in ["server.exs", "my_server.exs"],
         source = File.read!(path) do
       assert lines(source, eliminate: false, tally: :all) == lines(source), path
       assert lines(source, eliminate: false) == lines(source), path

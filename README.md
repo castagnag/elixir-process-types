@@ -126,6 +126,8 @@ Types in messages are read back from Descr into the syntax of annotations, with 
 names that `$type` defines: a subterm that denotes the same type as a name is printed
 as the name (`Server.worker` outside the module `Server`), and so is, in a union, a
 group of disjuncts whose union the name denotes. Singleton types are never renamed.
+A type with parameters is printed through those of its instances that the annotations of
+the program reach (`request(c, r)`), which are expanded before checking.
 A recursive type that is not a name is printed `rec x. t`, x standing for the whole type
 in t.
 One limit: Descr's printer drops negated arrows and pid types, so a type such as
@@ -138,7 +140,7 @@ checking.
 |---|---|
 | `ProcessTypes.Types` | the encoding into Descr, the only module that calls it |
 | `ProcessTypes.TypeSyntax` | annotation types: parsing and printing |
-| `ProcessTypes.TypeGraph` | the meaning of annotations: recursive types, decorate(·) |
+| `ProcessTypes.TypeGraph` | the meaning of annotations: recursive types, instances of parametrized types, decorate(·) |
 | `ProcessTypes.Printer` | printing types with the names that `$type` defines |
 | `ProcessTypes.Annotations` | extraction of the annotation lines |
 | `ProcessTypes.Frontend` | from Elixir code to the core syntax of the checker |

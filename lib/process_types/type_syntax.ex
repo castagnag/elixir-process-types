@@ -12,6 +12,7 @@ defmodule ProcessTypes.TypeSyntax do
                                        (t1, ..., tn -> t) @ u is @[u, u]
       {:or, t, t} | {:and, t, t} | {:not, t}
       {:name, module | nil, name}      a type defined by $type
+      {:app, module | nil, name, [t]}  an instance of a type with parameters
       {:raw, quoted}                   only when printing a type that has no source form
 
   and, only in printed types, `{:rec, x, t}` (the recursive type x = t, printed
@@ -20,6 +21,11 @@ defmodule ProcessTypes.TypeSyntax do
 
   The arguments of an arrow are a list: the domain is the argument itself for one
   argument, and the tuple of the arguments otherwise (GRAMMAR.md, §5.2).
+
+  `ProcessTypes.TypeGraph` also has the closed form of a name or an instance,
+  `{:inst, {module | nil, name}, [t]}`, which depends on no scope; it may be printed,
+  since it occurs in the bodies of expanded definitions. The body of a definition with
+  parameters is `{:lambda, [x], t}`, which is not a type.
   """
 
   import Kernel, except: [to_string: 1]
@@ -86,8 +92,14 @@ defmodule ProcessTypes.TypeSyntax do
   defp parse({{:., _, [{:__aliases__, _, parts}, name]}, _, []}) when is_atom(name),
     do: {:name, Module.concat(parts), name}
 
+  defp parse({{:., _, [{:__aliases__, _, parts}, name]}, _, args})
+       when is_atom(name) and is_list(args),
+       do: {:app, Module.concat(parts), name, Enum.map(args, &parse/1)}
+
+  defp parse({name, _, []}) when is_atom(name), do: bad("unknown type #{name}/0")
+
   defp parse({name, _, args}) when is_atom(name) and is_list(args),
-    do: bad("unknown type #{name}/#{length(args)}")
+    do: {:app, nil, name, Enum.map(args, &parse/1)}
 
   defp parse(q), do: bad("not a type: #{Macro.to_string(q)}")
 
@@ -107,7 +119,7 @@ defmodule ProcessTypes.TypeSyntax do
   The Descr type denoted by `t`. Type names are resolved in `defs`, which maps
   `{module | nil, name}` to `{source_type, line}`; a bare name in the scope of a
   module is first looked up in that module. Definitions may be recursive, if
-  contractive (`ProcessTypes.TypeGraph`).
+  contractive, and they may have parameters, if regular (`ProcessTypes.TypeGraph`).
   """
   defdelegate to_descr(t, defs, scope), to: ProcessTypes.TypeGraph
 
@@ -168,7 +180,12 @@ defmodule ProcessTypes.TypeSyntax do
   defp show({:name, nil, name}, _), do: Atom.to_string(name)
   defp show({:name, module, name}, _), do: "#{inspect(module)}.#{name}"
   defp show({:raw, q}, _), do: Macro.to_string(q)
+  defp show({:app, m, n, args}, p), do: show({:name, m, n}, p) <> show_args(args)
+  defp show({:inst, {m, n}, args}, p), do: show({:name, m, n}, p) <> show_args(args)
   defp show(name, _) when is_atom(name), do: "#{name}()"
+
+  defp show_args([]), do: ""
+  defp show_args(args), do: "(" <> Enum.map_join(args, ", ", &show(&1, 0)) <> ")"
 
   defp paren(true, s), do: "(" <> s <> ")"
   defp paren(false, s), do: s

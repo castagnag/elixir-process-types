@@ -263,6 +263,7 @@
         <tr><td><code>$interface T</code></td><td>before a <code>spawn</code>: the interface of the spawned process</td></tr>
         <tr><td><code>$self_interface T</code></td><td>the interface of the main process (default <code>term()</code>)</td></tr>
         <tr><td><code>$type name = T</code></td><td>a type definition, possibly recursive (if contractive)</td></tr>
+        <tr><td><code>$type name(x, …, x) = T</code></td><td>a definition with parameters, used as <code>name(T, …, T)</code> (if regular)</td></tr>
         <tr><td><code>(s, … -> t)@[o, i]</code></td><td>an arrow typed at the bracket [o, i]: in its body <code>self()</code> has type <code>pid(o)</code> and <code>receive</code> reads at <code>i</code>; without <code>@[…]</code>, the decorations are inferred</td></tr>
         <tr><td><code>(s, … -> t) @ u</code></td><td>the arrow <code>(s, … -> t)@[u, u]</code>; write <code>@ (u₁ or u₂)</code> for a union</td></tr>
         <tr><td><code>pid(T)</code>, <code>pid()</code>, <code>fun()</code></td><td>pid types, the top process type, the top function type</td></tr>

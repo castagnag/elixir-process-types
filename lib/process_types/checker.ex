@@ -44,7 +44,12 @@ defmodule ProcessTypes.Checker do
     backend = if mode == :ground, do: Backend.Ground, else: Backend.Infer
     st = backend.new(opts)
     {sigs, st} = signatures(program, backend, st)
-    names = Map.new([nil | program.modules], &{&1, Printer.names(program.types, &1)})
+
+    names =
+      Map.new(
+        [nil | program.modules],
+        &{&1, Printer.names(program.types, &1, program.instances)}
+      )
 
     ctx = %{
       backend: backend,

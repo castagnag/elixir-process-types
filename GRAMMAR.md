@@ -24,7 +24,7 @@ forms of annotations:
 
 | form | declares | attaches to |
 |---|---|---|
-| `$type name = T` | the type `name` (§5.3) | nothing |
+| `$type name = T` or `$type name(x, …, x) = T` | the type `name` (§5.3) | nothing |
 | `$ L` | the type of a function | the first `def` or `defp` of the next code line; if there is none, its first `fn` |
 | `$interface T` | the interface of a spawned process | the first `spawn` of the next code line |
 | `$self_interface T` | the interface of the main process | nothing; at most once, at top level |
@@ -51,7 +51,7 @@ fundef   ::= $ L  clause_f⁺                      consecutive clauses, same nam
 clause_f ::= kind name⟨(p, …, p)⟩? ⟨when g⟩? do b end
            | kind name⟨(p, …, p)⟩? ⟨when g⟩?, do: e
 kind     ::= def | defp
-typedef  ::= $type name = T
+typedef  ::= $type name⟨(x, …, x)⟩? = T            at least one parameter x (§5.3)
 selfint  ::= $self_interface T
 ```
 
@@ -119,8 +119,10 @@ T ::= :a | true | false | nil                    singleton types (atoms only, §
     | (T, …, T -> T)⟨@[T, T] | @ T⟩?              arrow, with decorations @[o, i] or @ u
     | not T | T and T | T or T | (T)
     | name | Alias.name                           defined by $type
+    | name(T, …, T) | Alias.name(T, …, T)         the same, with parameters (§5.3)
 L ::= A ⟨and A⟩*                                  function annotations
-A ::= (T, …, T -> T)⟨@[T, T] | @ T⟩? | name       a name used as an A must denote an L
+A ::= (T, …, T -> T)⟨@[T, T] | @ T⟩? | name       a name used as an A must denote an L,
+    | name(T, …, T)                               and so must an instance
 ```
 
 `not` binds tighter than `and`, which binds tighter than `or`. The suffixes `@[o, i]`
@@ -176,6 +178,50 @@ $type worker = :bump or {:run, (-> term())@[:bump, worker]}
 are definitions, while `$type t = t or integer()` and the pair `$type a = not b`,
 `$type b = a` are rejected. A recursive definition denotes a regular tree, the
 recursive type of the paper.
+
+`$type name(x₁, …, xₙ) = T`, with n ≥ 1 and distinct parameters xᵢ, defines a type with
+parameters, written `name(T₁, …, Tₙ)`, with exactly n arguments: an *instance*.
+
+```
+$type request(c, r)  = {c, pid(r)}
+$type server(c, r)   = pid(request(c, r))
+$type list(a)        = nil or {a, list(a)}
+$type server_get     = server(:get_int, integer())
+```
+
+- An instance means the body of the definition with the arguments in place of the
+  parameters, as if it had been written out. Parameters are not type variables, and
+  nothing is quantified: every instance is expanded before type checking, and a
+  parameter cannot be used without being instantiated.
+- A parameter is visible in the body only, and hides a type of the same name. The other
+  names of the body are resolved in the module of the definition, and those of the
+  arguments where the instance is written.
+- A name has one definition: `name` and `name(x)` cannot both be defined. The parameters
+  of a definition have no arguments of their own (`$type f(g) = g(:a)` is an unknown type
+  `g`), and `pid` cannot be redefined with parameters.
+- Contractivity is a property of the instances: with `$type id(a) = a`, the definition
+  `$type me = id(pid(me))` is accepted and is the `me` above, and `$type t = id(t)` is
+  rejected.
+- In inference mode, the arrows of an instance are decorated like written arrows: equal
+  arrows get the same pair (§5.2), so with `$type box(a) = (-> a)`, the type
+  `{box(:x), box(:y), box(:x)}` gets two pairs.
+
+The definitions must be *regular*, so that the instances reached from a type are finitely
+many. Consider the graph whose nodes are the parameters of all definitions, with an edge
+from a parameter x to the parameter y of a definition when an instance in the body of
+the definition of x gives y an argument where x occurs. The edge is *expansive* if the
+argument is not x itself. A definition is rejected, on its own line, when it has the
+source of an expansive edge that lies on a cycle (the condition of Viroli, and of Kennedy
+and Pierce for nominal subtyping), even if it is not used. Thus
+
+```
+$type swap(a, b) = nil or {a, swap(b, a)}      # regular: two instances for swap(:x, :y)
+$type grow(a)    = nil or {a, grow({a, a})}    # rejected: {a, a} strictly contains a
+```
+
+A type with parameters is not printed by its definition: in messages, a subterm is
+printed as an instance when it denotes an instance that the annotations of the program
+reach, and the instances written in the module at hand come first.
 
 ## 6. Required annotations and defaults
 

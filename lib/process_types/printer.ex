@@ -7,39 +7,68 @@ defmodule ProcessTypes.Printer do
   (`ProcessTypes.Types.factorize/1`). Then every compound subterm that denotes the same
   type as a defined name is printed as that name, and in a union a name also replaces
   the disjuncts whose union it denotes; larger names are tried first. Singleton types
-  and built-in types are never renamed.
+  and built-in types are never renamed. A definition with parameters has no type: what
+  gets a name is each of its instances that the annotations of the program reach.
   """
 
-  alias ProcessTypes.{TypeSyntax, Types}
+  alias ProcessTypes.{TypeGraph, TypeSyntax, Types}
 
   @doc """
   The names visible in `scope` (a module, or `nil` for the top level), as a list of
   `{name, type}` pairs, where `name` is the source type that prints the name: `n` for
-  a name of the scope or of the top level, `M.n` for a name of another module.
+  a name of the scope or of the top level, `M.n` for a name of another module; those of
+  the scope come first. They are followed by the `instances`
+  (`ProcessTypes.Frontend.Program`), those written in `scope` first, printed in the same
+  way.
   """
-  def names(defs, scope) do
-    defs
-    |> Enum.sort_by(fn {_key, {_type, line}} -> line end)
-    |> Enum.flat_map(fn {{module, n}, _} ->
-      display =
-        cond do
-          module == scope -> {:name, nil, n}
-          module == nil and not Map.has_key?(defs, {scope, n}) -> {:name, nil, n}
-          module == nil -> nil
-          true -> {:name, module, n}
-        end
+  def names(defs, scope, instances \\ []) do
+    plain =
+      defs
+      |> Enum.sort_by(fn {{module, _}, {_type, line}} -> {module != scope, line} end)
+      |> Enum.map(fn {{module, n} = key, _} -> {{:inst, key, []}, {:name, module, n}} end)
 
-      with true <- display != nil,
-           {:ok, t} <- TypeSyntax.to_descr({:name, module, n}, defs, nil),
+    instances =
+      instances
+      |> Enum.sort_by(fn {module, _} -> module != scope end)
+      |> Enum.uniq_by(&elem(&1, 1))
+      |> Enum.map(fn {_, inst} -> {inst, inst} end)
+
+    (plain ++ instances)
+    |> Enum.flat_map(fn {closed, source} ->
+      with {:ok, name} <- display(closed, defs, scope),
+           {:ok, t} <- TypeSyntax.to_descr(source, defs, nil),
            false <- Types.empty?(t) or Types.equal?(t, Types.term()) do
-        [{display, t}]
+        [{name, t}]
       else
         _ -> []
       end
     end)
-    # stable: names of the same size keep the order of their definitions
+    # stable: names of the same size keep the order above
     |> Enum.sort_by(fn {_, t} -> -size(t) end)
   end
+
+  # How a closed name or instance is written in scope; :error if a name of scope hides
+  # it or one of its arguments.
+  defp display(closed, defs, scope) do
+    {:ok, written(closed, defs, scope)}
+  catch
+    :hidden -> :error
+  end
+
+  defp written({:inst, {module, n}, args}, defs, scope) do
+    args = Enum.map(args, &written(&1, defs, scope))
+
+    module =
+      cond do
+        module == scope -> nil
+        module == nil and Map.has_key?(defs, {scope, n}) -> throw(:hidden)
+        true -> module
+      end
+
+    if args == [], do: {:name, module, n}, else: {:app, module, n, args}
+  end
+
+  defp written(t, defs, scope), do: TypeGraph.map_children(t, &written(&1, defs, scope))
 
   @doc """
   The type `t` in the syntax of annotations, with the given names. With
