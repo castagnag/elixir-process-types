@@ -133,9 +133,7 @@ defmodule ProcessTypes.Backend.Infer do
   end
 
   @impl true
-  def fn_bracket(st, occurrence) do
-    memo(st, {:bracket, occurrence}, fn st -> bracket(st, prefix(occurrence)) end)
-  end
+  def fn_bracket(st, occurrence), do: bracket(st, prefix(occurrence))
 
   @impl true
   def process_bracket(st, occurrence, t, line, diagnostic) do

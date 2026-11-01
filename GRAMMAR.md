@@ -230,8 +230,12 @@ reach, and the instances written in the module at hand come first.
   Section 9).
 - Every `fn` with parameters has a `$ L`.
 - An `fn` without parameters may have one. Without it, `fn -> b end` gets the type
-  `(-> t)@[o, i]`, where t is the type of `b`. In inference mode, [o, i] are fresh
-  variables (rule i-abs, with the type of `b` as codomain). In ground mode, `b` is
+  `(-> t)@[o, i]`, where t is the type of `b`. When `b` is typed several times, under
+  the arrows of an enclosing function or under the summands of §10, each typing gives its
+  own t and its own [o, i], as if the `fn` had a different annotation each time. This
+  goes beyond the calculus of the paper, where every abstraction has one annotation; an
+  `fn` with a `$ L` keeps its decorations once per occurrence (§5.2). In inference mode,
+  [o, i] are fresh variables at each typing. In ground mode, `b` is
   typed at the bracket [o, i] of the *expected type* when this is a single zero-arity
   arrow, at `[none(), term()]` otherwise. The expected type is known
   - at the message of a `send`: the interface of the target;
@@ -348,5 +352,7 @@ is the union of the types of its body.
   that reads its mailbox directly, `spawn(fn -> receive do … end end)`, is not split, since
   it runs at a fresh bracket (rule i-spawn), whereas in ground mode it runs at [t, t] and is.
   To have it split in inference mode, move the body to a `def` with a written bracket.
+- An `fn` without annotation in the body gets its own type and bracket under each summand
+  (§6), so a program may be accepted that no single annotation of that `fn` can type.
 - A body is typed once per summand, so an error may appear on one line once per summand, and
   k successive splits of n summands type the rest of a block nᵏ times.

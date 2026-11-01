@@ -82,8 +82,10 @@ defmodule ProcessTypes.Backend do
               {{:ok, [arrow]} | {:error, String.t()}, state}
 
   @doc """
-  The bracket of an unannotated `fn` at the occurrence: fresh decorations in inference
-  mode (rule i-abs), `nil` in ground mode, where the expected-type rule applies.
+  The bracket of an unannotated `fn` for this typing of its body: fresh decorations in
+  inference mode, not shared with the other premises that type the `fn`, since it has no
+  annotation to decorate (GRAMMAR.md, §6); `nil` in ground mode, where the expected-type
+  rule applies. The occurrence only names the variables.
   """
   @callback fn_bracket(state, occurrence) :: {{Types.t(), Types.t()} | nil, state}
 

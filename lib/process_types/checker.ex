@@ -472,9 +472,10 @@ defmodule ProcessTypes.Checker do
     app(ctx, st, f, args, meta, "this closure")
   end
 
-  # Rule t-abs for an fn without annotation. In inference mode it runs at fresh
-  # decorations (rule i-abs); in ground mode, at the bracket of the expected type when
-  # this is a single arrow of arity 0, at [none(), term()] otherwise (GRAMMAR.md, §6).
+  # An fn without annotation, which the calculus does not have: each typing of its body,
+  # under each premise that reaches it, gives it its own type and bracket (GRAMMAR.md, §6).
+  # In inference mode it runs at fresh decorations; in ground mode, at the bracket of the
+  # expected type when this is a single arrow of arity 0, at [none(), term()] otherwise.
   defp synth(ctx, st, {:fn, meta, nil, [{_, [], body}]}, expected) do
     case ctx.backend.fn_bracket(st, {:fn, meta[:line], meta[:column]}) do
       {{o, i}, st} ->

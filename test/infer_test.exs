@@ -129,6 +129,38 @@ defmodule ProcessTypes.InferTest do
     end
   end
 
+  test "an fn without annotation gets its own type and bracket under each arrow" do
+    # GRAMMAR.md, §6: without the option split, the premises are the arrows of f and g.
+    bracket = """
+    defmodule P do
+      $ (pid(pid(:r)), pid((-> term())@[:r, term()]) -> term())
+      and (pid(pid(:s)), pid((-> term())@[:s, term()]) -> term())
+      def f(t, w), do: send(w, fn -> send(t, self()) end)
+    end
+    """
+
+    type = """
+    defmodule P do
+      $ (:x -> (-> :x)) and (:y -> (-> :y))
+      def g(c), do: fn -> c end
+    end
+    """
+
+    # The bracket of the target conflicts with the body under the only arrow.
+    conflict = """
+    defmodule P do
+      $ (pid(pid(:r)), pid((-> term())@[:s, term()]) -> term())
+      def f(t, w), do: send(w, fn -> send(t, self()) end)
+    end
+    """
+
+    for mode <- [:infer, :ground] do
+      assert lines(bracket, mode: mode) == []
+      assert lines(type, mode: mode) == []
+      assert lines(conflict, mode: mode) == [3]
+    end
+  end
+
   test "messages show the least solution of the variables they print, not their bound" do
     # The projection x, and the result of f.(), are bounded only through the failing
     # constraint: eliminated in the prefix that localization solves, they would be

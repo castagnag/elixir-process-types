@@ -282,6 +282,80 @@ defmodule ProcessTypes.SplitTest do
     end
   end
 
+  describe "an fn without annotation gets its own type and bracket under each summand" do
+    test "its type follows the variables of the summand" do
+      source = """
+      defmodule P do
+        $type m = {:x, pid((-> :x))} or {:y, pid((-> :y))}
+        $ (m -> term())
+        def f({c, w}), do: send(w, fn -> c end)
+      end
+      """
+
+      assert lines_in_both_modes(source) == [[], []]
+      assert lines_in_both_modes(source, []) == [[4], [4]]
+    end
+
+    test "its bracket follows the summand, through the type of self()" do
+      source = """
+      defmodule P do
+        $type m = {pid(pid(:r)), pid((-> term())@[:r, term()])}
+               or {pid(pid(:s)), pid((-> term())@[:s, term()])}
+        $ (m -> term())
+        def f({t, w}), do: send(w, fn -> send(t, self()) end)
+      end
+      """
+
+      assert lines_in_both_modes(source) == [[], []]
+      assert lines_in_both_modes(source, []) == [[5], [5]]
+    end
+
+    test "its bracket follows the summand, through what it reads" do
+      source = """
+      defmodule P do
+        $type m = {:a, pid((-> integer())@[none(), integer()])}
+               or {:b, pid((-> boolean())@[none(), boolean()])}
+        $ (m -> term())
+        def f({_c, w}), do: send(w, fn -> receive do x -> x end end)
+      end
+      """
+
+      assert lines_in_both_modes(source) == [[], []]
+    end
+
+    test "a summand whose bracket conflicts with the body stays rejected" do
+      # In the second summand the body needs :s in the output decoration, the target forbids it.
+      source = """
+      defmodule P do
+        $type m = {pid(pid(:r)), pid((-> term())@[:r, term()])}
+               or {pid(pid(:s)), pid((-> term())@[:r, term()])}
+        $ (m -> term())
+        def f({t, w}), do: send(w, fn -> send(t, self()) end)
+      end
+      """
+
+      assert lines_in_both_modes(source) == [[5], [5]]
+    end
+
+    test "an fn with an annotation keeps its decorations once per occurrence" do
+      # The same fn as above, whose undecorated annotation has one pair of decorations.
+      source = """
+      defmodule P do
+        $type m = {pid(pid(:r)), pid((-> term())@[:r, term()])}
+               or {pid(pid(:s)), pid((-> term())@[:s, term()])}
+        $ (m -> term())
+        def f({t, w}) do
+          $ (-> term())
+          g = fn -> send(t, self()) end
+          send(w, g)
+        end
+      end
+      """
+
+      for mode <- [:ground, :infer], do: assert(lines(source, mode: mode, split: true) != [])
+    end
+  end
+
   test "a spawned body that reads its mailbox is split in ground mode only" do
     # In inference mode it runs at a fresh bracket, a variable at the top of r (rule i-spawn).
     source = """
