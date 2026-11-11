@@ -452,5 +452,10 @@ that inference accepts with the reconstructed interfaces declared.
   then bound the bracket of the call (Lemma `lem:recon-select`).
 - The type ℧ of the encoding of arrows (README.md, Design) is removed from the bounds of
   arguments.
-- The option of §10 is not available in this mode: it is ignored.
+- The option of §10 applies as in inference mode. A `receive` that reads the mailbox of a
+  process whose interface is being reconstructed is not split, since its refined type has
+  a variable at its top (§10); a `receive` typed at a written input decoration is.
+- The mode is conservative over inference: a program in which every `spawn` has its
+  `$interface` and the main process its `$self_interface` is checked exactly as in
+  inference mode, with the same options, the same report and the same cost.
 

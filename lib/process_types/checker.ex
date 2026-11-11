@@ -48,9 +48,9 @@ defmodule ProcessTypes.Checker do
   @doc """
   Checks a program. Options: `mode: :infer | :ground | :reconstruct` (default `:infer`;
   `:reconstruct` is inference with the reconstruction of the interfaces of the `spawn`s
-  that have none, GRAMMAR.md §11, and ignores `split`), `split: true`,
-  which types a branch once per summand of its refined type (experimental, off by default:
-  GRAMMAR.md, §10), and, for inference, `app: :literal | :compact` (see
+  that have none, GRAMMAR.md §11), `split: true`, which types a branch once per summand of
+  its refined type (experimental, off by default: GRAMMAR.md, §10; it applies in every
+  mode), and, for inference, `app: :literal | :compact` (see
   `ProcessTypes.Backend.Infer`) and `solve: false`, which skips tallying (to inspect the
   constraints).
   """
@@ -61,13 +61,15 @@ defmodule ProcessTypes.Checker do
 
     # With nothing to reconstruct (every spawn annotated, the interface of the main
     # process declared), the backend does not record: the check is that of inference.
+    # The other options, split among them, are those of inference: a program that
+    # inference accepts must be accepted in this mode, with the same types.
     opts =
       if reconstruct? do
         record =
           unannotated_spawn?({program.funs, program.main}) or
             (program.self_interface == nil and program.main != [])
 
-        Keyword.merge(opts, record: record, app: :compact, split: false)
+        Keyword.merge(opts, record: record, app: :compact)
       else
         opts
       end

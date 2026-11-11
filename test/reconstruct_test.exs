@@ -452,13 +452,71 @@ defmodule ProcessTypes.ReconstructTest do
       assert Enum.all?(result.interfaces, &(&1.type == nil))
     end
 
-    test "the experimental split is ignored" do
+    test "the experimental split changes nothing where no written decoration is split" do
       split = ProcessTypes.check_string(@adder, mode: :reconstruct, split: true)
 
       assert ProcessTypes.report(split, "p") ==
                ProcessTypes.report(check(@adder, :reconstruct), "p")
 
       assert interfaces(split) == interfaces(check(@adder, :reconstruct))
+    end
+
+    # The mode is conservative over inference (GRAMMAR.md, §11): the GenServer example
+    # needs the experimental split, which this mode must not drop.
+    test "the experimental split applies as in inference mode" do
+      source =
+        "examples/my_server.exs"
+        |> File.read!()
+        |> String.replace(~r/^send\(p, \{:foo, self\(\)\}\).*$/m, "")
+
+      infer = ProcessTypes.check_string(source, mode: :infer, split: true)
+      reconstruct = ProcessTypes.check_string(source, mode: :reconstruct, split: true)
+      assert infer.diagnostics == []
+      assert ProcessTypes.report(reconstruct, "p") == ProcessTypes.report(infer, "p")
+
+      # Without the option, both modes reject the call of the callback in loop.
+      for mode <- [:infer, :reconstruct] do
+        assert [%{line: 40}] = check(source, mode).diagnostics
+      end
+
+      # With the interface of the main process to reconstruct, the backend records, and
+      # the split still applies.
+      source = String.replace(source, "$self_interface :nothing\n", "")
+      assert ProcessTypes.check_string(source, mode: :infer, split: true).diagnostics == []
+      reconstruct = ProcessTypes.check_string(source, mode: :reconstruct, split: true)
+      assert reconstruct.diagnostics == []
+      assert interfaces(reconstruct) == [{nil, "none()"}]
+    end
+  end
+
+  # An example written for inference declares its interfaces, except possibly that of the
+  # main process: reconstruction mode gives the report of inference (GRAMMAR.md, §11),
+  # apart from the interface of the main process when it reconstructs it.
+  describe "conservativity over inference" do
+    for path <- Path.wildcard(Path.expand("../examples/*.exs", __DIR__)),
+        source = File.read!(path),
+        not (source =~ ~r/^# mode: (ground|reconstruct)$/m) do
+      @path path
+      @tag slow: source =~ ~r/^# slow:/m
+      test Path.basename(path) do
+        source = File.read!(@path)
+        split = source =~ ~r/^# split: experimental$/m
+
+        # Each check in a process of its own, as in the playground: the names of type
+        # variables come from counters of the process, and the order of two errors on
+        # one line may depend on them.
+        report = fn mode ->
+          Task.await(
+            Task.async(fn ->
+              result = ProcessTypes.check_string(source, mode: mode, split: split)
+              ProcessTypes.report(%{result | interfaces: []}, "p")
+            end),
+            :infinity
+          )
+        end
+
+        assert report.(:reconstruct) == report.(:infer)
+      end
     end
   end
 end

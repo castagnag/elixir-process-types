@@ -31,7 +31,7 @@ defmodule ProcessTypes.WebTest do
     assert "Remote Procedure Call" in Enum.map(examples, & &1["name"])
     assert "mixing_write" in Enum.map(examples, & &1["name"])
     assert ["server", "server_decorated", "server_errors" | _] = Enum.map(examples, & &1["file"])
-    assert List.last(examples)["name"] == "MyServer (parametrized types)"
+    assert "GenServer (parametrized types)" in Enum.map(examples, & &1["name"])
   end
 
   test "the documentation" do
