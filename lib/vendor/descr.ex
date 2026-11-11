@@ -604,6 +604,56 @@ defmodule ProcessTypes.Descr do
     ProcessTypes.Descr.Tally.tally_first(constraints, fixed)
   end
 
+  @doc """
+  The normal form of the constraint `left <= right`, the first step of tallying: a list
+  of alternatives, each a list of bounds `{lower, variable, upper}`, such that a
+  substitution satisfies the constraint iff it satisfies the bounds of one alternative.
+  `[]` when the constraint has no solution, `[[]]` when it always holds. Variables in
+  `fixed` are never bounded.
+  """
+  def tally_normalize(left, right, fixed \\ MapSet.new()) do
+    ProcessTypes.Descr.Tally.normalize_constraint(left, right, fixed)
+  end
+
+  @doc """
+  Substitutes variables at the top level of a type only: their occurrences below a type
+  constructor are kept.
+  """
+  def substitute_top({_, _, _} = node, substitutions),
+    do: node |> to_descr() |> substitute_top(substitutions)
+
+  def substitute_top({:type_variables, bdd}, substitutions) when is_map(substitutions) do
+    identities =
+      Map.new(substitutions, fn {variable, type} ->
+        {:ok, identity} = variable_identity(variable)
+        {identity, type}
+      end)
+
+    image = fn identity ->
+      Map.get_lazy(identities, identity, fn -> variable_from_identity(identity) end)
+    end
+
+    bdd
+    |> Poly.to_dnf()
+    |> Enum.reduce(none(), fn {positive, negative, leaf}, acc ->
+      summand = Enum.reduce(positive, leaf, &intersection(&2, image.(&1)))
+      summand = Enum.reduce(negative, summand, &difference(&2, image.(&1)))
+      union(acc, summand)
+    end)
+  end
+
+  def substitute_top(descr, substitutions) when is_map(substitutions), do: descr
+
+  @doc """
+  Solves a system of equations `variable = type`, given as a map, in which every variable
+  of the system occurs in the types only below a type constructor: the unique solution,
+  a map from the variables to types without these variables, recursive where needed.
+  `names` maps each variable to the name of its recursive type, an atom, for printing.
+  """
+  def solve_equations(equations, names) when is_map(equations) and is_map(names) do
+    ProcessTypes.Descr.Tally.solve_guarded(equations, names)
+  end
+
   @doc false
   def __tally_variable_identity__(variable), do: variable_identity(variable)
 

@@ -7,10 +7,16 @@ defmodule ProcessTypes.ExamplesTest do
   # :slow, and run only with mix test --include slow. An example with a line
   # "# split: experimental" is checked with the option split (GRAMMAR.md, §10).
 
+  #
+  # An example with the line "# mode: reconstruct" is checked in reconstruction mode only
+  # (GRAMMAR.md, §11); its lines "# interface (line n): T" and "# interface (main): T"
+  # give the interfaces that must be reconstructed, as they are printed.
+
   for path <- Path.wildcard(Path.expand("../examples/*.exs", __DIR__)),
       source = File.read!(path),
-      mode <- [:ground, :infer],
-      not (source =~ ~r/^# mode: (infer|ground)$/m) or source =~ "# mode: #{mode}\n" do
+      mode <- [:ground, :infer, :reconstruct],
+      (mode != :reconstruct and not (source =~ ~r/^# mode: (infer|ground|reconstruct)$/m)) or
+        source =~ "# mode: #{mode}\n" do
     @path path
     @mode mode
     @tag slow: source =~ ~r/^# slow:/m
@@ -28,6 +34,20 @@ defmodule ProcessTypes.ExamplesTest do
       result = ProcessTypes.check_string(source, mode: @mode, split: split)
       lines = result.diagnostics |> Enum.map(& &1.line) |> Enum.uniq() |> Enum.sort()
       assert lines == expected, ProcessTypes.report(result, @path)
+
+      interfaces =
+        for [_, where, type] <- Regex.scan(~r/^# interface \((line \d+|main)\): (.*)$/m, source),
+            do: {where, type}
+
+      if interfaces != [] do
+        found =
+          for i <- result.interfaces do
+            where = if i.line, do: "line #{i.line}", else: "main"
+            {where, i.type && ProcessTypes.Printer.to_string(i.type, result.names)}
+          end
+
+        assert Enum.sort(found) == Enum.sort(interfaces)
+      end
     end
   end
 

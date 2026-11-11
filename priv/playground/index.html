@@ -224,7 +224,7 @@
 <header>
   <div>
     <h1>Process types playground</h1>
-    <p>Type-checks the Elixir fragment of Sections 3–6 of the paper; decorations are optional, and inferred as in Section 8.</p>
+    <p>Type-checks the Elixir fragment of Sections 3–6 of the paper; decorations are optional, and inferred as in Section 8; interfaces can be reconstructed as in Section 9.</p>
   </div>
   <div class="controls">
     <select id="examples" aria-label="Load an example">
@@ -232,6 +232,7 @@
     </select>
     <button id="check" class="primary" type="button" title="Ctrl/⌘ + Enter">Check</button>
     <label class="toggle" title="Types a branch once per summand of its refined type, so that a tuple pattern keeps the correlation between components (Grammar, §10)"><input id="experimental-split" type="checkbox">experimental split</label>
+    <label class="toggle" title="A spawn may have no $interface: its interface is reconstructed from the receives of its process, and so is the interface of the main process without $self_interface (Section 9 of the paper; Grammar, §11)"><input id="reconstruct" type="checkbox">reconstruct interfaces</label>
     <span id="status" role="status"></span>
     <button class="docs" type="button" data-doc="README">README</button>
     <button class="docs" type="button" data-doc="GRAMMAR">Grammar</button>
@@ -355,6 +356,20 @@
     check();
   });
 
+  // Reconstruction mode (Grammar, §11); an example chooses it by its line "# mode: reconstruct".
+  const RECONSTRUCT = STORE + "-reconstruct", reconstructBox = $("reconstruct");
+  try { reconstructBox.checked = localStorage.getItem(RECONSTRUCT) === "true"; } catch (e) {}
+
+  function setReconstruct(on) {
+    reconstructBox.checked = on;
+    try { localStorage.setItem(RECONSTRUCT, on); } catch (e) {}
+  }
+
+  reconstructBox.addEventListener("change", () => {
+    setReconstruct(reconstructBox.checked);
+    check();
+  });
+
   async function check() {
     clearTimeout(timer);
     const id = ++seq, started = performance.now();
@@ -363,7 +378,12 @@
       const response = await fetch(API + "/check", {
         method: "POST",
         headers: {"content-type": "application/json"},
-        body: JSON.stringify({source: editor.value, split: splitBox.checked, client: CLIENT})
+        body: JSON.stringify({
+          source: editor.value,
+          mode: reconstructBox.checked ? "reconstruct" : "infer",
+          split: splitBox.checked,
+          client: CLIENT
+        })
       });
       const data = await response.json();
       if (id !== seq) return;
@@ -410,6 +430,45 @@
     return label;
   }
 
+  // Whether an accepted program shows the interfaces reconstructed for its spawns
+  // (reconstruction mode only).
+  const INTERFACES = STORE + "-interfaces";
+  let interfaces = true;
+  try { interfaces = localStorage.getItem(INTERFACES) !== "false"; } catch (e) {}
+
+  function interfacesToggle() {
+    const label = element("label", "toggle"), box = element("input");
+    box.type = "checkbox";
+    box.checked = interfaces;
+    box.addEventListener("change", () => {
+      interfaces = box.checked;
+      try { localStorage.setItem(INTERFACES, interfaces); } catch (e) {}
+      render(last);
+    });
+    label.title = "The interfaces reconstructed for the spawns without $interface, and for the main process without $self_interface";
+    label.append(box, document.createTextNode("show reconstructed interfaces"));
+    return label;
+  }
+
+  function interfaceRows(list) {
+    const box = element("div", "rows");
+    for (const i of list) {
+      const row = element("div");
+      if (i.line) {
+        const jump = element("button", "line", `spawn, line ${i.line}`);
+        jump.type = "button";
+        jump.addEventListener("click", () => goTo(i.line));
+        row.append(jump, element("span", "name", " : "));
+      } else {
+        row.append(element("span", "name", "main process : "));
+      }
+      row.append(document.createTextNode(decorations ? i.type : i.bare));
+      box.append(row);
+    }
+    if (!list.length) box.append(element("div", null, "every interface is declared"));
+    return [element("h2", null, "Reconstructed interfaces"), box];
+  }
+
   function render(data) {
     last = data;
     results.replaceChildren();
@@ -419,8 +478,12 @@
     } else if (data.ok) {
       const bar = element("div", "result-bar");
       bar.append(element("span", "verdict good", "accepted"));
-      if (data.functions.length || data.main) bar.append(decorationsToggle());
+      const reconstructed = data.mode === "reconstruct";
+      if (data.functions.length || data.main || (reconstructed && data.interfaces.length))
+        bar.append(decorationsToggle());
+      if (reconstructed) bar.append(interfacesToggle());
       results.append(bar);
+      if (reconstructed && interfaces) results.append(...interfaceRows(data.interfaces));
       if (data.functions.length)
         results.append(...rows("Functions", data.functions.map((f) => [f.name, decorations ? f.type : f.bare])));
       if (data.main) results.append(...rows("Main process", [["body", decorations ? data.main : data.main_bare]]));
@@ -462,6 +525,7 @@
     editor.scrollTop = 0;
     picker.value = example.name;
     if (/^# split: experimental$/m.test(example.source)) setExperimentalSplit(true);
+    setReconstruct(/^# mode: reconstruct$/m.test(example.source));
     save();
     refresh();
     check();

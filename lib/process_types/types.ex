@@ -61,6 +61,9 @@ defmodule ProcessTypes.Types do
   """
   def pointed(s), do: D.union(s, mho())
 
+  @doc "`t` without the point ℧: the inverse of `pointed/1` on the types of the language."
+  def unpointed(t), do: D.difference(t, mho())
+
   @doc """
   The arrow `s ->_o^i t`, given its pointed domain `ps`, that is, `pointed(s)`. Inside
   the equations of a recursive type, where `pointed/1` cannot be applied to a node of
@@ -123,6 +126,33 @@ defmodule ProcessTypes.Types do
   `subtype?/2` errs).
   """
   def tally_first(constraints), do: D.tally_first(constraints)
+
+  @doc """
+  The normal form that tallying gives to the constraint `s ≤ t`: a list of alternatives,
+  each a list of bounds `{lower, variable, upper}`; a substitution satisfies the
+  constraint iff it satisfies every bound of one alternative. `[]`: no solution; `[[]]`:
+  the constraint always holds. The variables of `fixed` are never bounded.
+  """
+  def normalize(s, t, fixed \\ MapSet.new()), do: D.tally_normalize(s, t, fixed)
+
+  @doc "The variables that occur in `t` outside every type constructor."
+  defdelegate top_vars(t), to: D
+
+  @doc "Whether `t` is monotone in the variable `v`: t{v ∧ δ/v} ≤ t for a fresh δ."
+  def monotone?(t, v), do: subtype?(substitute(t, %{v => intersection(v, var(:delta))}), t)
+
+  @doc "Whether `t` is antitone in the variable `v`: t{v ∨ δ/v} ≤ t for a fresh δ."
+  def antitone?(t, v), do: subtype?(substitute(t, %{v => union(v, var(:delta))}), t)
+
+  @doc "Substitutes variables at the top of `t` only, not below its type constructors."
+  defdelegate substitute_top(t, substitution), to: D
+
+  @doc """
+  The unique solution of a system of equations `variable = type`, a map, in which the
+  variables of the system occur only below type constructors. `names` gives, for each
+  variable, the name under which its solution is printed when it is recursive.
+  """
+  defdelegate solve_equations(equations, names), to: D
 
   # Recursive types
 

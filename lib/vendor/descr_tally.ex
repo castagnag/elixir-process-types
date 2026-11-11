@@ -123,6 +123,36 @@ defmodule ProcessTypes.Descr.Tally do
     end
   end
 
+  # The normal form of one constraint (not in the branch): step 1 of tallying alone, for
+  # callers that read the bounds that a constraint entails. Returns the alternatives, each
+  # a list of bounds {lower, variable, upper} with the variable as a type: the constraint
+  # holds under a substitution iff the bounds of one alternative do. [] means that the
+  # constraint has no solution, [[]] that every substitution satisfies it.
+  def normalize_constraint(left, right, fixed) do
+    fixed = normalize_fixed(fixed)
+
+    state = %{
+      fixed: fixed,
+      fixed_identities: MapSet.new(fixed, &variable_identity!/1),
+      memo: :ets.new(:descr_tally_memo, [:set, :private])
+    }
+
+    try do
+      left
+      |> Descr.difference(right)
+      |> normalize(state)
+      |> Enum.map(fn constraint_set ->
+        Enum.map(constraint_set, fn {lower, variable, upper} ->
+          {lower, Descr.__tally_variable__(variable), upper}
+        end)
+      end)
+    catch
+      :tally_unsatisfiable -> []
+    after
+      :ets.delete(state.memo)
+    end
+  end
+
   defp search(cs, [], constraints, state) do
     propagate_first(cs_any(), cs, MapSet.new(), state, fn saturated ->
       with {:ok, substitution} <- solve(saturated),
@@ -1282,6 +1312,40 @@ defmodule ProcessTypes.Descr.Tally do
       nil -> map_size(top) > 0
       {variable, _above} -> top_level_cycle?(Map.delete(top, variable))
     end
+  end
+
+  # The solution of a guarded system of equations variable = type (not in the branch),
+  # built as solve_system/2 builds the solutions of tallying. `names` gives the names of
+  # the recursive nodes, per variable.
+  def solve_guarded(equations, names) do
+    domain = MapSet.new(Map.keys(equations))
+
+    {closed, open} =
+      Enum.split_with(equations, fn {_variable, equation} ->
+        MapSet.disjoint?(Descr.syntactic_vars(equation), domain)
+      end)
+
+    closed = Map.new(closed)
+
+    nodes =
+      Descr.recursive(
+        Map.new(open, fn {variable, equation} ->
+          generator = fn recur ->
+            substitutions =
+              open
+              |> Map.new(fn {other, _} -> {other, recur.(Map.fetch!(names, other))} end)
+              |> Map.merge(closed)
+
+            Descr.__tally_substitute__(equation, substitutions)
+          end
+
+          {Map.fetch!(names, variable), generator}
+        end)
+      )
+
+    open
+    |> Map.new(fn {variable, _} -> {variable, Map.fetch!(nodes, Map.fetch!(names, variable))} end)
+    |> Map.merge(closed)
   end
 
   defp solve_system(equations, domain) do

@@ -7,12 +7,15 @@ defmodule Mix.Tasks.Typecheck do
       mix typecheck examples/server_decorated.exs
       mix typecheck --ground examples/server_decorated.exs
       mix typecheck --trace examples/counter.exs
+      mix typecheck --reconstruct examples/recon_bank.exs
 
   By default the decorations are inferred (GRAMMAR.md, §9); `--ground` reads an
   undecorated arrow as `@[none(), term()]`. In inference mode, `--trace` also prints
   the constraints deferred to tallying, with the line of the rule that generated them.
   In both modes, `--experimental-split` types a branch once per summand of its refined
-  type (GRAMMAR.md, §10).
+  type (GRAMMAR.md, §10). `--reconstruct` is inference in which a `spawn` may have no
+  `$interface`: the interfaces of these `spawn`s, and that of the main process when there
+  is no `$self_interface`, are reconstructed and printed (GRAMMAR.md, §11).
 
   Exits with status 1 when some file has an error.
   """
@@ -23,26 +26,38 @@ defmodule Mix.Tasks.Typecheck do
 
   @impl true
   def run(args) do
-    strict = [ground: :boolean, trace: :boolean, experimental_split: :boolean]
+    strict = [
+      ground: :boolean,
+      trace: :boolean,
+      experimental_split: :boolean,
+      reconstruct: :boolean
+    ]
 
     case OptionParser.parse(args, strict: strict) do
       {opts, [_ | _] = paths, []} ->
         check(paths, opts)
 
       _ ->
-        Mix.raise("usage: mix typecheck [--ground] [--trace] [--experimental-split] FILE...")
+        Mix.raise(
+          "usage: mix typecheck [--ground | --reconstruct] [--trace] [--experimental-split] FILE..."
+        )
     end
   end
 
   defp check(paths, opts) do
-    mode = if opts[:ground], do: :ground, else: :infer
+    mode =
+      cond do
+        opts[:ground] -> :ground
+        opts[:reconstruct] -> :reconstruct
+        true -> :infer
+      end
 
     errors? =
       Enum.reduce(paths, false, fn path, errors? ->
         result =
           ProcessTypes.check_file(path, mode: mode, split: opts[:experimental_split] == true)
 
-        if opts[:trace] && mode == :infer, do: trace(result, path)
+        if opts[:trace] && mode != :ground, do: trace(result, path)
         Mix.shell().info(ProcessTypes.report(result, path))
         errors? or result.diagnostics != []
       end)

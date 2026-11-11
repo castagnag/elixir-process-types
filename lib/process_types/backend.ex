@@ -102,6 +102,28 @@ defmodule ProcessTypes.Backend do
             ) :: {{Types.t(), Types.t()}, state}
 
   @doc """
+  Rule i-spawn-alt (reconstruction, GRAMMAR.md §11): the bracket `[o, i]` of the body of
+  a `spawn` without interface, or of the main process, and its pid variable γ; no
+  constraint relates them. Only the inference backend, when it records, implements it.
+  """
+  @callback spawn_alt(state, occurrence, line :: pos_integer() | nil) ::
+              {{Types.t(), Types.t()}, Types.t(), state}
+
+  @doc """
+  A fresh type for the variable that the pattern of a `receive` branch binds at its root,
+  above the refined type `r` of the branch (reconstruction); `r` itself when the backend
+  does not record.
+  """
+  @callback capture(state, r :: Types.t(), line :: pos_integer() | nil) :: {Types.t(), state}
+
+  @doc """
+  Tells the backend what the checker does, for the reconstruction: `{:kind, k}` describes
+  the next constraint, `{:receive, info}` a use of rule i-receive. Ignored unless the
+  backend records.
+  """
+  @callback note(state, event :: term()) :: state
+
+  @doc """
   Solves what was deferred. `reported` are the types that `instance/2` will be asked
   for: their variables must keep their most precise solution.
   """
@@ -154,6 +176,16 @@ defmodule ProcessTypes.Backend.Ground do
 
   @impl true
   def process_bracket(st, _occurrence, t, _line, _diagnostic), do: {{t, t}, st}
+
+  @impl true
+  def spawn_alt(_st, _occurrence, _line),
+    do: raise(ArgumentError, "ground mode does not reconstruct interfaces")
+
+  @impl true
+  def capture(st, r, _line), do: {r, st}
+
+  @impl true
+  def note(st, _event), do: st
 
   @impl true
   def finish(st, _reported), do: st

@@ -1,0 +1,151 @@
+OURS (not proposed to Guillaume Duboc). Three functions for the reconstruction of
+interfaces (Section 9 of the paper; lib/process_types/reconstruct*), none of which
+changes tallying:
+- tally_normalize/3 (Tally.normalize_constraint/3) exposes the first step of tallying on
+  one constraint: the alternatives of its normal form, each a list of bounds
+  {lower, variable, upper}. The reconstruction reads in them the bounds that a
+  constraint entails (the decompositions of Appendix D of the paper).
+- substitute_top/2 substitutes variables at the top level of a type only, not below its
+  type constructors: used to collapse the chains of bounds between unknowns.
+- solve_equations/2 (Tally.solve_guarded/2) solves a guarded system of equations
+  variable = type, with the recursive nodes named by the caller: it builds the system
+  as solve_system/2 (patch 09) does for the solutions of tallying.
+--- a/lib/vendor/descr.ex
++++ b/lib/vendor/descr.ex
+@@ -604,6 +604,56 @@
+     ProcessTypes.Descr.Tally.tally_first(constraints, fixed)
+   end
+ 
++  @doc """
++  The normal form of the constraint `left <= right`, the first step of tallying: a list
++  of alternatives, each a list of bounds `{lower, variable, upper}`, such that a
++  substitution satisfies the constraint iff it satisfies the bounds of one alternative.
++  `[]` when the constraint has no solution, `[[]]` when it always holds. Variables in
++  `fixed` are never bounded.
++  """
++  def tally_normalize(left, right, fixed \\ MapSet.new()) do
++    ProcessTypes.Descr.Tally.normalize_constraint(left, right, fixed)
++  end
++
++  @doc """
++  Substitutes variables at the top level of a type only: their occurrences below a type
++  constructor are kept.
++  """
++  def substitute_top({_, _, _} = node, substitutions),
++    do: node |> to_descr() |> substitute_top(substitutions)
++
++  def substitute_top({:type_variables, bdd}, substitutions) when is_map(substitutions) do
++    identities =
++      Map.new(substitutions, fn {variable, type} ->
++        {:ok, identity} = variable_identity(variable)
++        {identity, type}
++      end)
++
++    image = fn identity ->
++      Map.get_lazy(identities, identity, fn -> variable_from_identity(identity) end)
++    end
++
++    bdd
++    |> Poly.to_dnf()
++    |> Enum.reduce(none(), fn {positive, negative, leaf}, acc ->
++      summand = Enum.reduce(positive, leaf, &intersection(&2, image.(&1)))
++      summand = Enum.reduce(negative, summand, &difference(&2, image.(&1)))
++      union(acc, summand)
++    end)
++  end
++
++  def substitute_top(descr, substitutions) when is_map(substitutions), do: descr
++
++  @doc """
++  Solves a system of equations `variable = type`, given as a map, in which every variable
++  of the system occurs in the types only below a type constructor: the unique solution,
++  a map from the variables to types without these variables, recursive where needed.
++  `names` maps each variable to the name of its recursive type, an atom, for printing.
++  """
++  def solve_equations(equations, names) when is_map(equations) and is_map(names) do
++    ProcessTypes.Descr.Tally.solve_guarded(equations, names)
++  end
++
+   @doc false
+   def __tally_variable_identity__(variable), do: variable_identity(variable)
+ 
+--- a/lib/vendor/descr_tally.ex
++++ b/lib/vendor/descr_tally.ex
+@@ -123,6 +123,36 @@
+     end
+   end
+ 
++  # The normal form of one constraint (not in the branch): step 1 of tallying alone, for
++  # callers that read the bounds that a constraint entails. Returns the alternatives, each
++  # a list of bounds {lower, variable, upper} with the variable as a type: the constraint
++  # holds under a substitution iff the bounds of one alternative do. [] means that the
++  # constraint has no solution, [[]] that every substitution satisfies it.
++  def normalize_constraint(left, right, fixed) do
++    fixed = normalize_fixed(fixed)
++
++    state = %{
++      fixed: fixed,
++      fixed_identities: MapSet.new(fixed, &variable_identity!/1),
++      memo: :ets.new(:descr_tally_memo, [:set, :private])
++    }
++
++    try do
++      left
++      |> Descr.difference(right)
++      |> normalize(state)
++      |> Enum.map(fn constraint_set ->
++        Enum.map(constraint_set, fn {lower, variable, upper} ->
++          {lower, Descr.__tally_variable__(variable), upper}
++        end)
++      end)
++    catch
++      :tally_unsatisfiable -> []
++    after
++      :ets.delete(state.memo)
++    end
++  end
++
+   defp search(cs, [], constraints, state) do
+     propagate_first(cs_any(), cs, MapSet.new(), state, fn saturated ->
+       with {:ok, substitution} <- solve(saturated),
+@@ -1284,6 +1314,40 @@
+     end
+   end
+ 
++  # The solution of a guarded system of equations variable = type (not in the branch),
++  # built as solve_system/2 builds the solutions of tallying. `names` gives the names of
++  # the recursive nodes, per variable.
++  def solve_guarded(equations, names) do
++    domain = MapSet.new(Map.keys(equations))
++
++    {closed, open} =
++      Enum.split_with(equations, fn {_variable, equation} ->
++        MapSet.disjoint?(Descr.syntactic_vars(equation), domain)
++      end)
++
++    closed = Map.new(closed)
++
++    nodes =
++      Descr.recursive(
++        Map.new(open, fn {variable, equation} ->
++          generator = fn recur ->
++            substitutions =
++              open
++              |> Map.new(fn {other, _} -> {other, recur.(Map.fetch!(names, other))} end)
++              |> Map.merge(closed)
++
++            Descr.__tally_substitute__(equation, substitutions)
++          end
++
++          {Map.fetch!(names, variable), generator}
++        end)
++      )
++
++    open
++    |> Map.new(fn {variable, _} -> {variable, Map.fetch!(nodes, Map.fetch!(names, variable))} end)
++    |> Map.merge(closed)
++  end
++
+   defp solve_system(equations, domain) do
+     renaming = Map.new(equations, fn {original, fresh, _equation} -> {fresh, original} end)
+ 

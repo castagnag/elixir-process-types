@@ -79,7 +79,7 @@ e      ::= x
          | receive do clause⁺ end
          | if e do b end | if e do b else b end
          | send(e, e)
-         | spawn(e)                        annotated by $interface (§6)
+         | spawn(e)                        annotated by $interface (§6, §11)
          | (b)
 clause ::= p, …, p ⟨when g⟩? -> b          exactly one pattern in case and receive
 ```
@@ -226,8 +226,8 @@ reach, and the instances written in the module at hand come first.
 ## 6. Required annotations and defaults
 
 - Every function definition has a `$ L`.
-- Every `spawn` has a `$interface T`: interfaces are not reconstructed (that is
-  Section 9).
+- Every `spawn` has a `$interface T`, except in reconstruction mode (§11), where the
+  interface of a `spawn` without annotation is reconstructed (Section 9 of the paper).
 - Every `fn` with parameters has a `$ L`.
 - An `fn` without parameters may have one. Without it, `fn -> b end` gets the type
   `(-> t)@[o, i]`, where t is the type of `b`. When `b` is typed several times, under
@@ -356,3 +356,55 @@ is the union of the types of its body.
   (§6), so a program may be accepted that no single annotation of that `fn` can type.
 - A body is typed once per summand, so an error may appear on one line once per summand, and
   k successive splits of n summands type the rest of a block nᵏ times.
+
+## 11. Reconstruction of interfaces
+
+In **reconstruction** mode (`mix typecheck --reconstruct`) a `spawn` may have no
+`$interface`: its interface is reconstructed as Section 9 of the paper prescribes
+(Definition `def:reconstruction`), and so is the interface of the main process when there
+is no `$self_interface` (in the two other modes it is `term()`). Annotated and unannotated
+`spawn`s may be mixed. A program in which every `spawn` is annotated and the interface of
+the main process is declared is checked exactly as in inference mode. Inference stays the
+default mode, and still rejects a `spawn` without annotation.
+
+The four steps:
+
+1. *Generation.* The constraints are those of inference mode (§9), with rule i-spawn-alt
+   for an unannotated `spawn`: its body is typed at a fresh bracket [β, α], the `spawn`
+   has type `pid(γ)` for a fresh γ, and no constraint relates α, β and γ. The main process
+   without `$self_interface` is typed at a fresh bracket too, without γ.
+2. *Derivation.* For each unannotated `spawn`, the `receive`s that its process runs are
+   those typed at an input decoration that the constraints place above α. Each of their
+   branches, of pattern p_j, gives a *demand* α ∧ q_j ≤ m_j, where q_j is what the branch
+   selects and m_j is p_j with each capture variable replaced by the meet of the upper
+   bounds that the constraints place on its type (those of the sends to the process itself
+   excepted); the union of the accepted types of all the patterns is the *coverage*.
+3. *Solving.* The type variables of the demands other than α and β are replaced by their
+   extrema (meet of the upper bounds for a covariant one, join of the lower bounds for a
+   contravariant one), α and β are identified, and the interface is the solution of the
+   resulting equation x = F(x, x): a ground type, recursive when the process runs
+   functions that it receives. The `spawn`s are solved in dependency order: one whose
+   demands mention the variables of another is solved after it.
+4. *Checking.* γ is replaced by the interface t found, β ≤ t ≤ α is added, as rule
+   i-spawn does for a declared interface, and the constraints are solved as in inference
+   mode. A message that does not conform to a reconstructed interface is reported at its
+   `send`, as for a declared one.
+
+Reconstruction fails, and the `spawn` is reported as needing a `$interface`, in two cases:
+a type variable occurs in the demands with both polarities (the polarity hypothesis (PH)
+of the paper, as for `{:run, from, job} -> send(from, job.())`), or the dependencies form
+a cycle (two processes that each forward to the other). A program may also be rejected
+at step 4 although some annotation types it (Section 9.6 of the paper): the reconstructed
+interface never contains a message that no `receive` of the process handles, it is one
+among several maximal interfaces when the process runs functions that it receives, and it
+may be too large when a branch relates two capture variables or ships a closure.
+
+Differences from the paper, all in the way the definitions of its Appendix D are computed:
+
+- The decomposition of constraints (Definition `def:recon-dec`) is read in the normal form
+  that tallying gives to each constraint, hence up to equivalence and not by form.
+- The `receive`s that a process runs are found by following the bounds between
+  decorations, a sufficient condition for the entailment of Definition `def:recon-runs`.
+- Polarities are tested semantically (a type is monotone or antitone in a variable).
+- The option of §10 is not available in this mode.
+

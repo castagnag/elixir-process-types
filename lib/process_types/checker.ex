@@ -29,13 +29,24 @@ defmodule ProcessTypes.Checker do
     its module), the type of the main process body (or `nil`), the
     type names visible at the top level, for printing (`ProcessTypes.Printer`), and the
     mode of the check. In inference mode, `constraints` lists the constraints deferred to
-    tallying, as `%{sub: s, sup: t, line: line}`, in generation order.
+    tallying, as `%{sub: s, sup: t, line: line}`, in generation order. In reconstruction
+    mode, `interfaces` lists the interfaces reconstructed, as `%{line: line, type: t}`, in
+    the order of the lines: `line` is that of the `spawn`, or `nil` for the main process,
+    and `t` is `nil` when the reconstruction failed.
     """
-    defstruct diagnostics: [], functions: [], main: nil, names: [], mode: :infer, constraints: []
+    defstruct diagnostics: [],
+              functions: [],
+              main: nil,
+              names: [],
+              mode: :infer,
+              constraints: [],
+              interfaces: []
   end
 
   @doc """
-  Checks a program. Options: `mode: :infer | :ground` (default `:infer`), `split: true`,
+  Checks a program. Options: `mode: :infer | :ground | :reconstruct` (default `:infer`;
+  `:reconstruct` is inference with the reconstruction of the interfaces of the `spawn`s
+  that have none, GRAMMAR.md §11, and ignores `split`), `split: true`,
   which types a branch once per summand of its refined type (experimental, off by default:
   GRAMMAR.md, §10), and, for inference, `app: :literal | :compact` (see
   `ProcessTypes.Backend.Infer`) and `solve: false`, which skips tallying (to inspect the
@@ -44,6 +55,13 @@ defmodule ProcessTypes.Checker do
   def check(%Program{} = program, opts \\ []) do
     mode = Keyword.get(opts, :mode, :infer)
     backend = if mode == :ground, do: Backend.Ground, else: Backend.Infer
+    reconstruct? = mode == :reconstruct
+
+    opts =
+      if reconstruct?,
+        do: Keyword.merge(opts, record: true, app: :compact, split: false),
+        else: opts
+
     st = backend.new(opts)
     {sigs, st} = signatures(program, backend, st)
 
@@ -76,7 +94,7 @@ defmodule ProcessTypes.Checker do
     {s0, line, st} =
       case program.self_interface do
         nil ->
-          {Types.term(), nil, st}
+          {if(reconstruct?, do: nil, else: Types.term()), nil, st}
 
         {type, line} ->
           {s0, st} = annotation(ctx, st, :main, type, line)
@@ -86,21 +104,34 @@ defmodule ProcessTypes.Checker do
     # The main process, like a spawned one, runs at a bracket that narrows its
     # interface (rule i-spawn).
     {main, st} =
-      if program.main == [] do
-        {nil, st}
-      else
-        {{o, i}, st} =
-          backend.process_bracket(st, :main, s0, line, fn inst ->
-            Diagnostic.error(
-              line,
-              "the main process does not keep to its interface #{show(ctx, inst.(s0))}"
-            )
-          end)
+      cond do
+        program.main == [] ->
+          {nil, st}
 
-        block(%{ctx | o: o, i: i}, st, program.main, nil)
+        # Reconstruction: the main process without declared interface is typed like the
+        # body of an unannotated spawn, without pid variable (Section 9.1 of the paper).
+        s0 == nil ->
+          {{o, i}, _pid, st} = backend.spawn_alt(st, :main, nil)
+          block(%{ctx | o: o, i: i}, st, program.main, nil)
+
+        true ->
+          {{o, i}, st} =
+            backend.process_bracket(st, :main, s0, line, fn inst ->
+              Diagnostic.error(
+                line,
+                "the main process does not keep to its interface #{show(ctx, inst.(s0))}"
+              )
+            end)
+
+          block(%{ctx | o: o, i: i}, st, program.main, nil)
       end
 
-    st = if Keyword.get(opts, :solve, true), do: backend.finish(st, List.wrap(main)), else: st
+    {st, interfaces} =
+      cond do
+        not Keyword.get(opts, :solve, true) -> {st, []}
+        reconstruct? -> ProcessTypes.Reconstruct.run(st, program, sigs, List.wrap(main), names)
+        true -> {backend.finish(st, List.wrap(main)), []}
+      end
 
     functions =
       for fun <- program.funs |> Map.values() |> Enum.sort_by(& &1.line), fun.annotation do
@@ -124,7 +155,9 @@ defmodule ProcessTypes.Checker do
         st
         |> Map.get(:deferred, [])
         |> Enum.reverse()
-        |> Enum.map(&Map.take(&1, [:sub, :sup, :line]))
+        |> Enum.reject(&is_map_key(&1, :placeholder))
+        |> Enum.map(&Map.take(&1, [:sub, :sup, :line])),
+      interfaces: interfaces
     }
   end
 
@@ -198,17 +231,22 @@ defmodule ProcessTypes.Checker do
   # type r_j = (t ∧ ⌈p_j⌉) ∖ ⋁_{h<j} ⌈p_h⌉, and skipped when r_j is empty, that is,
   # empty whatever its type variables stand for.
   defp branches(ctx, st, t, clauses, opts) do
-    {covered, types, st} =
-      Enum.reduce(clauses, {Types.none(), [], st}, fn {meta, patterns, body},
-                                                      {covered, types, st} ->
+    receive? = opts[:receive] == true
+
+    {covered, types, st, noted} =
+      Enum.reduce(clauses, {Types.none(), [], st, []}, fn {meta, patterns, body},
+                                                          {covered, types, st, noted} ->
         p = single(patterns)
         r = Types.difference(Types.intersection(t, upper(p)), covered)
+        q = if receive?, do: Types.difference(upper(p), covered)
         covered = Types.union(covered, lower(p))
 
         if Types.empty?(r) do
-          {covered, types, st}
+          {covered, types, st, [%{pattern: p, q: q, line: meta[:line], env: %{}} | noted]}
         else
           {envs, st} = penv(ctx, st, r, p, meta[:line])
+          {envs, st} = if receive?, do: captures(ctx, st, envs, r, p, meta[:line]), else: {envs, st}
+          noted = [%{pattern: p, q: q, line: meta[:line], env: hd(envs)} | noted]
 
           {u, st} =
             per_env(st, envs, fn env, st ->
@@ -229,9 +267,15 @@ defmodule ProcessTypes.Checker do
                 end)
             end
 
-          {covered, [u | types], st}
+          {covered, [u | types], st, noted}
         end
       end)
+
+    # A use of rule i-receive, for the reconstruction (the backend ignores it otherwise).
+    st =
+      if receive?,
+        do: ctx.backend.note(st, {:receive, %{delta: t, branches: Enum.reverse(noted)}}),
+        else: st
 
     st =
       case opts[:exhaustive] do
@@ -249,6 +293,29 @@ defmodule ProcessTypes.Checker do
 
     {Types.union_all(types), st}
   end
+
+  # In a receive branch, a variable that the pattern binds at its root (outside every
+  # tuple pattern) gets a type of its own, above the refined type r of the branch: the
+  # backend returns r itself unless it records for the reconstruction, where the upper
+  # bounds of this type are those that the branch places on the message (Definition
+  # def:recon-demand of the paper).
+  defp captures(ctx, st, envs, r, p, line) do
+    case root_variables(p) do
+      [] ->
+        {envs, st}
+
+      xs ->
+        {x, st} = ctx.backend.capture(st, r, line)
+        {Enum.map(envs, fn env -> Enum.reduce(xs, env, &Map.put(&2, &1, x)) end), st}
+    end
+  end
+
+  defp root_variables({:pvar, _, x}), do: [x]
+  defp root_variables({:pand, _, p1, p2}), do: root_variables(p1) ++ root_variables(p2)
+  defp root_variables(_p), do: []
+
+  @doc false
+  def accepted(p), do: upper(p)
 
   # What the scope of a pattern types once per environment: the union of the results.
   defp per_env(st, [env], typing), do: typing.(env, st)
@@ -459,7 +526,7 @@ defmodule ProcessTypes.Checker do
         {Types.none(), st}
 
       {:ok, sig} ->
-        app(ctx, st, sig.type, args, meta, name)
+        app(ctx, st, sig.type, args, meta, name, {module, f, length(args)})
 
       :error ->
         {_, st} = synth_all(ctx, st, args)
@@ -469,7 +536,7 @@ defmodule ProcessTypes.Checker do
 
   defp synth(ctx, st, {:apply, meta, e, args}, _expected) do
     {f, st} = synth(ctx, st, e, nil)
-    app(ctx, st, f, args, meta, "this closure")
+    app(ctx, st, f, args, meta, "this closure", nil)
   end
 
   # An fn without annotation, which the calculus does not have: each typing of its body,
@@ -552,7 +619,7 @@ defmodule ProcessTypes.Checker do
 
   # Rule t-receive: the mailbox is read at the input decoration i.
   defp synth(ctx, st, {:receive, _meta, clauses}, expected),
-    do: branches(ctx, st, ctx.i, clauses, expected: expected)
+    do: branches(ctx, st, ctx.i, clauses, expected: expected, receive: true)
 
   # Rule t-send. When the type of the target is known (it has no variables) and is no
   # process type, the error is reported at once; otherwise the constraint p ≤ pid(m)
@@ -573,6 +640,8 @@ defmodule ProcessTypes.Checker do
 
     st =
       if process? or not known? do
+        st = ctx.backend.note(st, {:kind, {:send, p, m}})
+
         ctx.backend.require_subtype(st, p, Types.pid(m), meta[:line], fn inst ->
           {p, m} = {inst.(p), inst.(m)}
 
@@ -628,6 +697,36 @@ defmodule ProcessTypes.Checker do
     {Types.pid(s), st}
   end
 
+  # Rule i-spawn-alt (reconstruction, GRAMMAR.md §11): no interface is declared; the body
+  # runs at a fresh bracket and the spawn has the type pid(γ) for a fresh γ.
+  defp synth(ctx, st, {:spawn, meta, nil, target}, _expected) do
+    occurrence = {:spawn, meta[:line], meta[:column]}
+    {{o, i}, g, st} = ctx.backend.spawn_alt(st, occurrence, meta[:line])
+
+    st =
+      case target do
+        {:body, body} ->
+          {_, st} = block(%{ctx | o: o, i: i}, st, body, nil)
+          st
+
+        {:expr, e} ->
+          {f, st} = synth(ctx, st, e, nil)
+          st = ctx.backend.note(st, {:kind, {:app, nil}})
+
+          {_, st} =
+            ctx.backend.apply(st, f, Types.tuple([]), o, i, meta[:line], fn _reason, inst ->
+              Diagnostic.error(
+                meta[:line],
+                "spawn: a function of type #{show(ctx, inst.(f))} cannot run in the spawned process"
+              )
+            end)
+
+          st
+      end
+
+    {Types.pid(g), st}
+  end
+
   defp synth(ctx, st, {:block, _, stmts}, expected), do: block(ctx, st, stmts, expected)
 
   defp not_a_process(ctx, p),
@@ -635,7 +734,8 @@ defmodule ProcessTypes.Checker do
 
   # Applications
 
-  defp app(ctx, st, f, args, meta, name) do
+  # head: the key of the named function applied, nil for a closure.
+  defp app(ctx, st, f, args, meta, name, head) do
     n = length(args)
 
     expected =
@@ -650,6 +750,7 @@ defmodule ProcessTypes.Checker do
 
     s = if n == 1, do: hd(types), else: Types.tuple(types)
     {o, i} = {ctx.o, ctx.i}
+    st = ctx.backend.note(st, {:kind, {:app, head}})
 
     ctx.backend.apply(st, f, s, o, i, meta[:line], fn reason, inst ->
       Diagnostic.error(

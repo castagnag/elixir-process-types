@@ -6,7 +6,7 @@ defmodule ProcessTypes.Web do
       GET  /examples  the programs of examples/, as [{"name", "file", "source"}], where
                       "file" is the file name without .exs
       GET  /docs      README.md and GRAMMAR.md, as [{"name", "source"}]
-      POST /check     {"source": ..., "mode": "infer" | "ground", "split": true | false,
+      POST /check     {"source": ..., "mode": "infer" | "ground" | "reconstruct", "split": true | false,
                       "client": ...},
                       answered by {"ok", "diagnostics", "functions", "main",
                       "main_bare"} or
@@ -48,7 +48,13 @@ defmodule ProcessTypes.Web do
   post "/check" do
     case conn.body_params do
       %{"source" => source} = params when is_binary(source) ->
-        mode = if params["mode"] == "ground", do: :ground, else: :infer
+        mode =
+          case params["mode"] do
+            "ground" -> :ground
+            "reconstruct" -> :reconstruct
+            _ -> :infer
+          end
+
         opts = [mode: mode, split: params["split"] == true, client: params["client"]]
         json(conn, 200, check(source, opts))
 
@@ -108,7 +114,17 @@ defmodule ProcessTypes.Web do
             }
         end),
       main: result.main && Printer.to_string(result.main, result.names),
-      main_bare: result.main && Printer.to_string(result.main, result.names, decorations: false)
+      main_bare: result.main && Printer.to_string(result.main, result.names, decorations: false),
+      mode: Atom.to_string(result.mode),
+      # The interfaces reconstructed (reconstruction mode): line is null for the main process.
+      interfaces:
+        for %{line: line, type: type} <- result.interfaces, type do
+          %{
+            line: line,
+            type: Printer.to_string(type, result.names),
+            bare: Printer.to_string(type, result.names, decorations: false)
+          }
+        end
     }
   end
 
@@ -127,6 +143,19 @@ defmodule ProcessTypes.Web do
     {"mixing_correlation", "mixing_correlation"},
     {"mixing_multishot", "mixing_multishot"},
     {"mixing_write", "mixing_write"},
+    {"recon_bank", "Reconstruction: bank account"},
+    {"recon_bank_errors", "Reconstruction: bank account (errors)"},
+    {"recon_server", "Reconstruction: Server"},
+    {"recon_server_errors", "Reconstruction: Server (errors)"},
+    {"recon_jobs", "Reconstruction: jobs (recursive interface)"},
+    {"recon_forward", "Reconstruction: forwarding (dependencies)"},
+    {"recon_appendix", "Reconstruction: self-sends, refinements, pure calls"},
+    {"recon_closure", "Reconstruction: closure sent to a received pid"},
+    {"recon_limits_coverage", "Reconstruction limits 1: outside the coverage"},
+    {"recon_limits_maximal", "Reconstruction limits 2: another maximal interface"},
+    {"recon_limits_solving", "Reconstruction limits 3: polarity, cycle"},
+    {"recon_limits_too_large", "Reconstruction limits 4: interface too large"},
+    {"recon_limits_overloaded", "Reconstruction limits 4: effect-overloaded function"},
     {"reply_server", "Reply server (experimental split)"},
     {"my_server", "MyServer (parametrized types)"}
   ]

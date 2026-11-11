@@ -16,7 +16,7 @@ defmodule ProcessTypes.Frontend do
       {:case, meta, e, [clause]}
       {:receive, meta, [clause]}
       {:send, meta, e, e}
-      {:spawn, meta, interface, {:body, block} | {:expr, e}}
+      {:spawn, meta, interface | nil, {:body, block} | {:expr, e}}
       {:block, meta, block}
 
   A block is a list of statements `{:expr, e}` and `{:match, meta, p, e}`; a clause is
@@ -76,13 +76,17 @@ defmodule ProcessTypes.Frontend do
     :!
   ]
 
-  @doc "Returns `{program, diagnostics}`; the program is `nil` when the code does not parse."
-  def parse(source) do
+  @doc """
+  Returns `{program, diagnostics}`; the program is `nil` when the code does not parse.
+  With the option `reconstruct: true` a `spawn` may have no `$interface` (GRAMMAR.md, §11):
+  its interface is then `nil`.
+  """
+  def parse(source, opts \\ []) do
     {code, annotations, diagnostics} = Annotations.extract(source)
 
     case Code.string_to_quoted(code, columns: true, token_metadata: true) do
       {:ok, ast} ->
-        {program, more} = program(ast, annotations)
+        {program, more} = program(ast, annotations, Keyword.get(opts, :reconstruct, false))
         {program, diagnostics ++ more}
 
       {:error, {meta, message, token}} ->
@@ -93,13 +97,13 @@ defmodule ProcessTypes.Frontend do
 
   # Programs
 
-  defp program(ast, annotations) do
+  defp program(ast, annotations, reconstruct?) do
     forms = block_forms(ast)
     {attach, diags} = attachments(ast, annotations)
     {types, self_interface, diags} = declarations(annotations, forms, diags)
     {types, diags} = regular(types, diags)
     instances = instances(annotations, types, forms)
-    cx = %{attach: attach, module: nil}
+    cx = %{attach: attach, module: nil, reconstruct?: reconstruct?}
     empty = %Program{types: types, instances: instances, self_interface: self_interface}
 
     {program, diags} =
@@ -432,7 +436,8 @@ defmodule ProcessTypes.Frontend do
   defp expr({:spawn, meta, [e]}, cx) do
     interface =
       cx.attach[{:spawn, {meta[:line], meta[:column]}}] ||
-        fail(meta, "spawn needs a $interface annotation on the line before")
+        (not cx.reconstruct? &&
+           fail(meta, "spawn needs a $interface annotation on the line before")) || nil
 
     # An unannotated fn -> b end is spawned as its body b (Section 5 of the paper).
     target =

@@ -36,6 +36,12 @@ defmodule ProcessTypes.Backend.Infer do
   solution gives a valid typing, and the program is accepted iff there is one.
   Options, defaults first, for comparisons: `eliminate: true | false`,
   `tally: :first | :all`.
+
+  With the option `record: true`, set by reconstruction mode only (GRAMMAR.md, §11), the
+  backend also keeps what `ProcessTypes.Reconstruct` needs: the kind of each constraint
+  (`:send`, `{:app, head, f, s, o, i, γ}`), the uses of rule i-receive, and the
+  unannotated `spawn`s, each with a placeholder among the constraints, where
+  `finish_with/4` puts the constraints of rule i-spawn once the interface is known.
   """
 
   @behaviour ProcessTypes.Backend
@@ -50,6 +56,10 @@ defmodule ProcessTypes.Backend.Infer do
       roles: %{},
       memo: %{},
       solution: %{},
+      record: Keyword.get(opts, :record, false),
+      kind: nil,
+      events: [],
+      pre: %{},
       app: Keyword.get(opts, :app, :compact),
       tally:
         Map.new([eliminate: true, tally: :first], fn {k, v} -> {k, Keyword.get(opts, k, v)} end)
@@ -62,18 +72,29 @@ defmodule ProcessTypes.Backend.Infer do
   @impl true
   def require_subtype(st, sub, sup, line, diagnostic) do
     if Types.ground?(sub) and Types.ground?(sup),
-      do: Ground.require_subtype(st, sub, sup, line, diagnostic),
-      else: defer(st, sub, sup, line, diagnostic)
+      do: Ground.require_subtype(st, sub, sup, line, diagnostic) |> unkind(),
+      else: defer(st, sub, sup, line, diagnostic) |> unkind()
   end
+
+  # The kind noted by the checker describes one constraint only.
+  defp unkind(%{kind: nil} = st), do: st
+  defp unkind(st), do: %{st | kind: nil}
 
   @impl true
   def apply(st, f, s, o, i, line, diagnostic) do
     if Enum.all?([f, s, o, i], &Types.ground?/1) do
       # The least γ, which tallying would also find.
-      Ground.apply(st, f, s, o, i, line, diagnostic)
+      {u, st} = Ground.apply(st, f, s, o, i, line, diagnostic)
+      {u, unkind(st)}
     else
       diagnostic = fn inst -> diagnostic.(reason(inst, f, s, o, i), inst) end
       {g, st} = fresh(st, "res_#{line}", :res)
+
+      st =
+        case st.kind do
+          {:app, head} -> %{st | kind: {:app, head, f, s, o, i, g}}
+          _ -> st
+        end
 
       case st.app do
         :literal ->
@@ -89,7 +110,7 @@ defmodule ProcessTypes.Backend.Infer do
           {g, st}
 
         :compact ->
-          {g, defer(st, f, Types.arrow(s, o, i, g), line, diagnostic, [f, s, o, i])}
+          {g, defer(st, f, Types.arrow(s, o, i, g), line, diagnostic, [f, s, o, i]) |> unkind()}
       end
     end
   end
@@ -143,6 +164,68 @@ defmodule ProcessTypes.Backend.Infer do
     end)
   end
 
+  @impl true
+  def spawn_alt(st, occurrence, line) do
+    memo(st, {:spawn_alt, occurrence}, fn st ->
+      {{o, i}, st} = bracket(st, prefix(occurrence))
+      {g, st} = fresh(st, "pid_#{prefix(occurrence)}", :pid)
+      info = %{occurrence: occurrence, line: line, o: o, i: i, pid: g}
+      placeholder = %{placeholder: occurrence, line: line}
+
+      {{{o, i}, g},
+       %{st | events: [{:spawn_alt, info} | st.events], deferred: [placeholder | st.deferred]}}
+    end)
+    |> then(fn {{bracket, g}, st} -> {bracket, g, st} end)
+  end
+
+  @impl true
+  def capture(%{record: false} = st, r, _line), do: {r, st}
+
+  def capture(st, r, line) do
+    {x, st} = fresh(st, "x_#{line}", :proj)
+
+    {x,
+     defer(st, r, x, line, fn _inst ->
+       ProcessTypes.Diagnostic.error(line, "this branch cannot bind its variable")
+     end)}
+  end
+
+  @impl true
+  def note(%{record: false} = st, _event), do: st
+  def note(st, {:kind, kind}), do: %{st | kind: kind}
+  def note(st, event), do: %{st | events: [event | st.events]}
+
+  @doc "The constraints deferred so far, in generation order, with the placeholders."
+  def deferred(st), do: Enum.reverse(st.deferred)
+
+  @doc "What `note/2` and `spawn_alt/3` recorded, in generation order."
+  def events(st), do: Enum.reverse(st.events)
+
+  @doc "The role of each variable minted: `:o`, `:i`, `:res`, `:proj` or `:pid`."
+  def roles(st), do: st.roles
+
+  @doc """
+  The checking step of the reconstruction: `pre` maps pid variables to the interfaces
+  found; each placeholder of an occurrence in `brackets` (a map from occurrences to
+  lists of constraints, as maps with `:sub`, `:sup`, `:line` and `:diagnostic`) is replaced
+  by these constraints, the others are dropped; then as `finish/2`.
+  """
+  def finish_with(st, pre, brackets, reported) do
+    deferred =
+      Enum.flat_map(st.deferred, fn
+        %{placeholder: occurrence} ->
+          brackets
+          |> Map.get(occurrence, [])
+          |> Enum.map(&Map.merge(%{shown: [&1.sub, &1.sup], kind: nil}, &1))
+          |> Enum.reverse()
+
+        c ->
+          [%{c | sub: Types.substitute(c.sub, pre), sup: Types.substitute(c.sup, pre)}]
+      end)
+
+    finish(%{st | deferred: deferred, pre: pre}, Enum.map(reported, &Types.substitute(&1, pre)))
+  end
+
   defp bracket(st, prefix) do
     {o, st} = fresh(st, "o_#{prefix}", :o)
     {i, st} = fresh(st, "i_#{prefix}", :i)
@@ -154,7 +237,7 @@ defmodule ProcessTypes.Backend.Infer do
     keep =
       reported |> Enum.map(&Types.syntactic_vars/1) |> Enum.reduce(MapSet.new(), &MapSet.union/2)
 
-    opts = Map.put(st.tally, :keep, keep)
+    opts = st.tally |> Map.put(:keep, keep) |> Map.put(:pre, st.pre)
 
     {errors, solution} =
       st.deferred
@@ -169,7 +252,7 @@ defmodule ProcessTypes.Backend.Infer do
   end
 
   @impl true
-  def instance(st, t), do: instantiate(st.solution, st.roles).(t)
+  def instance(st, t), do: instantiate(st.solution, st.roles, st.pre).(t)
 
   # Components: the constraints that share variables, directly or not, in generation
   # order.
@@ -213,7 +296,7 @@ defmodule ProcessTypes.Backend.Infer do
         # must keep their most precise solution, so they are not eliminated.
         shown = culprit.shown |> Enum.map(&Types.syntactic_vars/1) |> Enum.reduce(&MapSet.union/2)
         [sigma | _] = tally(base, %{opts | keep: MapSet.union(opts.keep, shown)})
-        error = culprit.diagnostic.(instantiate(sigma, roles))
+        error = culprit.diagnostic.(instantiate(sigma, roles, opts.pre))
         localize(base, rest, [error | errors], roles, opts)
     end
   end
@@ -262,7 +345,10 @@ defmodule ProcessTypes.Backend.Infer do
     end)
   end
 
-  defp instantiate(sigma, roles) do
+  # pre: the interfaces that the reconstruction substituted for the pid variables.
+  defp instantiate(sigma, roles, pre) do
+    sigma = if pre == %{}, do: sigma, else: Map.merge(sigma, pre)
+
     fn t ->
       t = Types.substitute(t, sigma)
       Types.substitute(t, Map.new(Types.syntactic_vars(t), &{&1, ground(roles[&1])}))
@@ -281,7 +367,8 @@ defmodule ProcessTypes.Backend.Infer do
       sup: sup,
       line: line,
       diagnostic: diagnostic,
-      shown: shown || [sub, sup]
+      shown: shown || [sub, sup],
+      kind: st.kind
     }
 
     %{st | deferred: [constraint | st.deferred]}

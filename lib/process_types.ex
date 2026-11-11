@@ -13,11 +13,11 @@ defmodule ProcessTypes do
 
   @doc """
   Checks a program given as a string. Options are those of `ProcessTypes.Checker.check/2`:
-  `mode: :infer` (the default) or `mode: :ground` (GRAMMAR.md, §9), and `split: true`
-  (experimental, GRAMMAR.md, §10).
+  `mode: :infer` (the default) or `mode: :ground` (GRAMMAR.md, §9), `mode: :reconstruct`
+  (GRAMMAR.md, §11), and `split: true` (experimental, GRAMMAR.md, §10).
   """
   def check_string(source, opts \\ []) do
-    case Frontend.parse(source) do
+    case Frontend.parse(source, reconstruct: Keyword.get(opts, :mode) == :reconstruct) do
       {nil, diagnostics} ->
         %Result{diagnostics: diagnostics, mode: Keyword.get(opts, :mode, :infer)}
 
@@ -42,7 +42,15 @@ defmodule ProcessTypes do
             do: ["  main process : #{ProcessTypes.Printer.to_string(result.main, result.names)}"],
             else: []
 
-        Enum.join(["#{file}: ok" | functions ++ main], "\n")
+        interfaces =
+          for %{line: line, type: type} <- result.interfaces, type do
+            where = if line, do: "spawn, line #{line}", else: "main process"
+
+            "  reconstructed interface, #{where} : " <>
+              ProcessTypes.Printer.to_string(type, result.names)
+          end
+
+        Enum.join(["#{file}: ok" | functions ++ main ++ interfaces], "\n")
 
       diagnostics ->
         Enum.map_join(diagnostics, "\n", &Diagnostic.format(&1, file))
