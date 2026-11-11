@@ -106,6 +106,37 @@ defmodule ProcessTypes.WebTest do
     assert %{"ok" => false, "diagnostics" => [%{"line" => 2}]} = JSON.decode!(conn.resp_body)
   end
 
+  test "reconstruction mode sends the interfaces; inference mode asks for $interface" do
+    source = File.read!("examples/recon_bank.exs")
+    spawn_line = Enum.find_index(String.split(source, "\n"), &(&1 =~ "spawn(")) + 1
+
+    conn = call(:post, "/check", %{source: source, mode: "reconstruct"})
+
+    assert %{"ok" => true, "mode" => "reconstruct", "interfaces" => [first | _]} =
+             JSON.decode!(conn.resp_body)
+
+    assert %{"line" => ^spawn_line, "type" => type, "bare" => _} = first
+    assert type =~ "{:deposit, integer()}"
+
+    conn = call(:post, "/check", %{source: source})
+
+    assert %{"ok" => false, "diagnostics" => [%{"line" => ^spawn_line, "message" => message} | _]} =
+             JSON.decode!(conn.resp_body)
+
+    assert message =~ "$interface"
+
+    # Nothing to reconstruct: the answer is that of inference, with no interface.
+    declared = "$self_interface :a\nsend(self(), :a)\n"
+
+    answer = fn mode ->
+      JSON.decode!(call(:post, "/check", %{source: declared, mode: mode}).resp_body)
+    end
+
+    reconstructed = answer.("reconstruct")
+    assert reconstructed["interfaces"] == []
+    assert Map.drop(reconstructed, ["mode"]) == Map.drop(answer.("infer"), ["mode"])
+  end
+
   test "the experimental option split is off unless the request asks for it" do
     lines = fn body ->
       conn = call(:post, "/check", body)

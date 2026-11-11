@@ -155,6 +155,23 @@ applies the patches of `scripts/descr_patches/`, in order:
     `not ({:run, not (-> term())@[...]} or {:total, not pid({:total, integer()})} or
     {:work_add, not integer()})`. Printing all the types of that example takes 9 ms
     instead of 31 ms.
+14. `14-reconstruction-support.patch`, ours, not proposed to Guillaume Duboc: three
+    functions for the reconstruction of interfaces (Section 9 of the paper, GRAMMAR.md
+    §11); none changes tallying, and inference does not call them.
+    - `tally_normalize/3` (`Tally.normalize_constraint/3`) exposes the first step of
+      tallying on one constraint: the normal form of `left <= right`, a list of
+      alternatives, each a list of bounds `{lower, variable, upper}`, such that a
+      substitution satisfies the constraint iff it satisfies the bounds of one
+      alternative; the variables of `fixed` are never bounded. The reconstruction reads
+      in it the bounds that a constraint entails (`ProcessTypes.Reconstruct.Bounds`).
+    - `substitute_top/2` substitutes variables at the top level of a type only, not
+      below its type constructors: a chain ζ ≤ η between two unknowns of the
+      reconstruction is replaced by the bound of η, while the guarded occurrences of η
+      stay for the recursive solution.
+    - `solve_equations/2` (`Tally.solve_guarded/2`) solves a system of equations
+      `variable = type` in which the variables of the system occur only below type
+      constructors, as one `recursive/1` system with a node per variable, the way
+      `solve_system/2` of patch 09 builds the solutions of tallying.
 
 Patches 02 to 07 address limits of the branch that its own tests do not exercise; they
 were reported to Guillaume Duboc, with the limits below.

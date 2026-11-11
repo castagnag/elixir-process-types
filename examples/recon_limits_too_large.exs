@@ -33,7 +33,25 @@ shipper = spawn(fn ->
   end
 end)
 
-# Declared, both are accepted.
+# 3. A closure forwarded to a process whose declared interface contains an arrow. The
+# annotation of runner does not write the decorations of that arrow: they are type
+# variables, which the demand of the branch mentions and which nothing bounds on the
+# side that matters. Taken at their extrema, they make the arrow demanded of job the
+# largest one, (-> term())@[term(), none()], which is not what runner accepts.
+$interface {:run, (-> term())}
+runner = spawn(fn ->
+  receive do
+    {:run, job} -> job.()
+  end
+end)
+
+forwarder = spawn(fn ->
+  receive do
+    {:fwd, job} -> send(runner, {:run, job})   # error: job need not be one that runner runs
+  end
+end)
+
+# Declared, the three are accepted.
 $interface {:to, pid(integer()), integer()}
 relay2 = spawn(fn ->
   receive do
@@ -50,5 +68,12 @@ shipper2 = spawn(fn ->
       send(p, job)
     :tick ->
       :ok
+  end
+end)
+
+$interface {:fwd, (-> term())}
+forwarder2 = spawn(fn ->
+  receive do
+    {:fwd, job} -> send(runner, {:run, job})
   end
 end)

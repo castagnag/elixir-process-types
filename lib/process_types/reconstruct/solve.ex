@@ -3,7 +3,8 @@ defmodule ProcessTypes.Reconstruct.Solve do
   The solving step of the reconstruction (Section 9.3 and Appendix D of the paper).
 
   - `mailbox_pure/2`: the mailbox-pure functions (Definition `def:recon-pure`) among the
-    named functions, and the substitution θ_M of their decorations.
+    named functions whose arrows are undecorated or decorated `@[none(), term()]`, and
+    the substitution θ_M of their decorations.
   - `dependencies/3`: the `spawn`s on which a `spawn` depends (Definition
     `def:recon-depends`).
   - `interface/4`: the reduced constraint set (Definition `def:recon-cstar`), the
@@ -37,6 +38,7 @@ defmodule ProcessTypes.Reconstruct.Solve do
           %{arrows: arrows} = Map.fetch!(sigs, key),
           is_list(arrows),
           Enum.all?(arrows, &(Types.ground?(&1.s) and Types.ground?(&1.t))),
+          Enum.all?(arrows, &pure_bracket?/1),
           not mentions?(fun.clauses, [:receive, :self, :apply]),
           into: %{},
           do: {key, {arrows, calls(fun.clauses, fun.module)}}
@@ -52,6 +54,14 @@ defmodule ProcessTypes.Reconstruct.Solve do
       end
 
     {Map.new(pure, &{&1, elem(Map.fetch!(candidates, &1), 0)}), theta}
+  end
+
+  # θ_M maps the decorations of a mailbox-pure function to [none(), term()]: they must be
+  # type variables (the arrow is undecorated), or be written as this very bracket. A
+  # function with another written bracket is not mailbox-pure, nor are its callers.
+  defp pure_bracket?(arrow) do
+    (Store.variable(arrow.i) != nil or Types.subtype?(Types.term(), arrow.i)) and
+      (Store.variable(arrow.o) != nil or Types.empty?(arrow.o))
   end
 
   # The least set: a candidate enters when all the functions it calls are in.
@@ -145,7 +155,8 @@ defmodule ProcessTypes.Reconstruct.Solve do
     store = Store.new(constraints, world.selection)
 
     results =
-      for %{kind: {:app, _, _, _, _, _, g}} <- overloaded(constraints, world.pure, derived.captures),
+      for %{kind: {:app, _, _, _, _, _, g}} <-
+            overloaded(constraints, world.pure, derived.captures),
           v = Store.variable(g),
           do: v
 
@@ -239,6 +250,7 @@ defmodule ProcessTypes.Reconstruct.Solve do
               end)
           ])
       end
+
     exclude = MapSet.new([spawn.i, spawn.o])
     unknowns = Store.closure(store, Store.polarities(f), exclude)
 

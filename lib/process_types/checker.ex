@@ -3,7 +3,9 @@ defmodule ProcessTypes.Checker do
   The type checker: the algorithmic rules of Fig. `fig:inference` (Section 8.2 of the
   paper) on the core syntax of `ProcessTypes.Frontend`, in one of the two modes of
   GRAMMAR.md, §9: inference (`ProcessTypes.Backend.Infer`, the default) or ground
-  (`ProcessTypes.Backend.Ground`, every decoration known, as in Sections 3–6).
+  (`ProcessTypes.Backend.Ground`, every decoration known, as in Sections 3–6). A third
+  mode, reconstruction (GRAMMAR.md, §11), is inference with rule i-spawn-alt for the
+  `spawn`s without `$interface`, followed by `ProcessTypes.Reconstruct`.
 
   `synth/4` computes the type of an expression in a context that holds the variable
   environment and the bracket `[o, i]` of the judgment; its last argument is the
@@ -57,10 +59,18 @@ defmodule ProcessTypes.Checker do
     backend = if mode == :ground, do: Backend.Ground, else: Backend.Infer
     reconstruct? = mode == :reconstruct
 
+    # With nothing to reconstruct (every spawn annotated, the interface of the main
+    # process declared), the backend does not record: the check is that of inference.
     opts =
-      if reconstruct?,
-        do: Keyword.merge(opts, record: true, app: :compact, split: false),
-        else: opts
+      if reconstruct? do
+        record =
+          unannotated_spawn?({program.funs, program.main}) or
+            (program.self_interface == nil and program.main != [])
+
+        Keyword.merge(opts, record: record, app: :compact, split: false)
+      else
+        opts
+      end
 
     st = backend.new(opts)
     {sigs, st} = signatures(program, backend, st)
@@ -241,11 +251,14 @@ defmodule ProcessTypes.Checker do
         q = if receive?, do: Types.difference(upper(p), covered)
         covered = Types.union(covered, lower(p))
 
-        if Types.empty?(r) do
+        if Types.empty?(ctx.backend.resolved(st, r)) do
           {covered, types, st, [%{pattern: p, q: q, line: meta[:line], env: %{}} | noted]}
         else
           {envs, st} = penv(ctx, st, r, p, meta[:line])
-          {envs, st} = if receive?, do: captures(ctx, st, envs, r, p, meta[:line]), else: {envs, st}
+
+          {envs, st} =
+            if receive?, do: captures(ctx, st, envs, r, p, meta[:line]), else: {envs, st}
+
           noted = [%{pattern: p, q: q, line: meta[:line], env: hd(envs)} | noted]
 
           {u, st} =
@@ -293,6 +306,12 @@ defmodule ProcessTypes.Checker do
 
     {Types.union_all(types), st}
   end
+
+  defp unannotated_spawn?({:spawn, _meta, nil, _target}), do: true
+  defp unannotated_spawn?(%{} = map), do: map |> Map.values() |> unannotated_spawn?()
+  defp unannotated_spawn?(t) when is_tuple(t), do: t |> Tuple.to_list() |> unannotated_spawn?()
+  defp unannotated_spawn?([h | rest]), do: unannotated_spawn?(h) or unannotated_spawn?(rest)
+  defp unannotated_spawn?(_term), do: false
 
   # In a receive branch, a variable that the pattern binds at its root (outside every
   # tuple pattern) gets a type of its own, above the refined type r of the branch: the

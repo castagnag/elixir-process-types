@@ -13,15 +13,22 @@ defmodule ProcessTypes.Reconstruct.Bounds do
 
   - An alternative that implies another one is dropped (the constraint of an
     application yields the alternative "the input decoration of the callee is
-    `term()`", which implies the bound of the other one).
+    `term()`", which implies the bound of the other one). They are dropped one at a
+    time, each for an alternative that is still there.
   - With one alternative left, its bounds are entailed. Normalization isolates one
     variable per summand, the smallest: for l ≤ ζ ≤ u with both bounds proper, the
     constraint l ≤ u that they induce is decomposed too (one step of the saturation
     of tallying; this is clause 1 of the definition, for a union on the left). When
-    s ∖ t is monotone in ζ, the lower bound is an artifact of the normal form (l is
-    then empty under every solution): it is replaced by the decomposition of l ≤ 𝟘;
-    dually when it is antitone. A bound between ζ and a type with variables at its
-    top is read for these variables too, by normalizing it again with ζ fixed.
+    s ∖ t is monotone in ζ and ζ does not occur in l, the lower bound is an artifact
+    of the normal form (a solution stays one when ζ is replaced by 𝟘, so l is empty
+    under every solution): it is replaced by the decomposition of l ≤ 𝟘; dually when
+    it is antitone and ζ does not occur in u. A bound between ζ and a type with
+    variables at its top is read for these variables too, by normalizing it again
+    with ζ *demoted*: renamed to a fresh variable, which is larger than the others in
+    the order of tallying, so that another variable is isolated. (Declaring ζ fixed in
+    tallying would not do: the normal form would then be that of the constraint for
+    every ζ.) The bounds that this normal form gives to a demoted variable are not
+    read.
   - With several alternatives, a variable bounded from above in each of them has the
     union of these bounds as entailed upper bound, and dually. This is how a tuple
     constraint splits at a component when the other components are inhabited
@@ -47,22 +54,49 @@ defmodule ProcessTypes.Reconstruct.Bounds do
 
   defp go(_s, _t, _fixed, 0), do: {[], []}
 
+  # fixed: the variables demoted on the way, whose bounds are not read again.
   defp go(s, t, fixed, depth) do
-    case s |> Types.normalize(t, fixed) |> prune() do
+    case s |> normalize(t, fixed) |> prune() do
       [] ->
         {[], []}
 
       [alternative] ->
         d = Types.difference(s, t)
 
-        Enum.reduce(alternative, {[], []}, fn triple, {entailed, all} ->
+        alternative
+        |> Enum.reject(fn {_l, v, _u} -> MapSet.member?(fixed, v) end)
+        |> Enum.reduce({[], []}, fn triple, {entailed, all} ->
           {e, a} = triple(triple, d, fixed, depth)
           {e ++ entailed, a ++ all}
         end)
 
       alternatives ->
-        read = Enum.map(alternatives, fn alt -> Enum.flat_map(alt, &simple/1) end)
+        read =
+          Enum.map(alternatives, fn alt ->
+            alt
+            |> Enum.reject(fn {_l, v, _u} -> MapSet.member?(fixed, v) end)
+            |> Enum.flat_map(&simple/1)
+          end)
+
         {join(read), Enum.concat(read)}
+    end
+  end
+
+  # The normal form of s ≤ t in which the variables of `demoted` are isolated last: they
+  # are renamed to fresh variables, which come after the others in the order of tallying,
+  # and renamed back in the result. The constraint is the same up to this renaming.
+  defp normalize(s, t, demoted) do
+    if MapSet.size(demoted) == 0 do
+      Types.normalize(s, t)
+    else
+      fresh = Map.new(demoted, &{&1, Types.var(:demoted)})
+      back = Map.new(fresh, fn {v, f} -> {f, v} end)
+
+      for alternative <- Types.normalize(Types.substitute(s, fresh), Types.substitute(t, fresh)) do
+        for {l, v, u} <- alternative do
+          {Types.substitute(l, back), Map.get(back, v, v), Types.substitute(u, back)}
+        end
+      end
     end
   end
 
@@ -88,10 +122,10 @@ defmodule ProcessTypes.Reconstruct.Bounds do
 
       {true, true} ->
         cond do
-          Types.monotone?(d, v) ->
+          not occurs?(v, l) and Types.monotone?(d, v) ->
             merge(upper(v, u, fixed, depth), go(l, Types.none(), fixed, depth - 1))
 
-          Types.antitone?(d, v) ->
+          not occurs?(v, u) and Types.antitone?(d, v) ->
             merge(lower(v, l, fixed, depth), go(Types.term(), u, fixed, depth - 1))
 
           true ->
@@ -118,6 +152,8 @@ defmodule ProcessTypes.Reconstruct.Bounds do
       do: merge(here, go(l, v, MapSet.put(fixed, v), depth - 1)),
       else: here
   end
+
+  defp occurs?(v, t), do: MapSet.member?(Types.syntactic_vars(t), v)
 
   defp flip?(t, v, fixed),
     do: not MapSet.subset?(Types.top_vars(t), MapSet.put(fixed, v))
@@ -146,14 +182,17 @@ defmodule ProcessTypes.Reconstruct.Bounds do
   defp prune([_] = alternatives), do: alternatives
   defp prune([]), do: []
 
+  # One at a time: an alternative is dropped for one that is still there, so that every
+  # dropped alternative implies, through those dropped after it, one that is kept.
   defp prune(alternatives) do
-    indexed = Enum.with_index(alternatives)
-
-    for {a, i} <- indexed,
-        not Enum.any?(indexed, fn {b, j} ->
-          i != j and implies?(a, b) and not (j > i and implies?(b, a))
-        end),
-        do: a
+    alternatives
+    |> Enum.with_index()
+    |> Enum.reduce(Enum.with_index(alternatives), fn {a, i}, kept ->
+      if Enum.any?(kept, fn {b, j} -> i != j and implies?(a, b) end),
+        do: List.keydelete(kept, i, 1),
+        else: kept
+    end)
+    |> Enum.map(&elem(&1, 0))
   end
 
   # A sufficient condition: under the variables that a pins (lower ≃ upper), the bounds

@@ -165,13 +165,15 @@ defmodule ProcessTypes.Reconstruct do
 
   # An application of an overloaded function to a ground argument that only one of its
   # arrows accepts must select this arrow (Lemma lem:recon-select of the paper): the
-  # bracket of the application narrows the bracket of the arrow.
+  # bracket of the application narrows the bracket of the arrow. The domains must be
+  # ground, for the test to hold under every substitution.
   defp selection(constraints, sigs) do
     for %{kind: {:app, head, _f, s, o, i, _g}} <- constraints,
         head != nil,
         %{arrows: arrows} <- [Map.get(sigs, head)],
         is_list(arrows),
         length(arrows) > 1,
+        Enum.all?(arrows, &Types.ground?(&1.s)),
         Types.ground?(s),
         not Types.empty?(s),
         arrow <- arrows,

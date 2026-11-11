@@ -117,6 +117,13 @@ defmodule ProcessTypes.Backend do
   @callback capture(state, r :: Types.t(), line :: pos_integer() | nil) :: {Types.t(), state}
 
   @doc """
+  The type `t` in which every type returned by `capture/3` is replaced by the refined
+  type that it stands for. The checker decides on it whether a branch is dead, so that
+  the branches typed are those of rule i-case on the refined types themselves.
+  """
+  @callback resolved(state, t :: Types.t()) :: Types.t()
+
+  @doc """
   Tells the backend what the checker does, for the reconstruction: `{:kind, k}` describes
   the next constraint, `{:receive, info}` a use of rule i-receive. Ignored unless the
   backend records.
@@ -183,6 +190,9 @@ defmodule ProcessTypes.Backend.Ground do
 
   @impl true
   def capture(st, r, _line), do: {r, st}
+
+  @impl true
+  def resolved(_st, t), do: t
 
   @impl true
   def note(st, _event), do: st

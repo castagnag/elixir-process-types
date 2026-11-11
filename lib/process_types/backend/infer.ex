@@ -59,6 +59,7 @@ defmodule ProcessTypes.Backend.Infer do
       record: Keyword.get(opts, :record, false),
       kind: nil,
       events: [],
+      captures: %{},
       pre: %{},
       app: Keyword.get(opts, :app, :compact),
       tally:
@@ -183,12 +184,17 @@ defmodule ProcessTypes.Backend.Infer do
 
   def capture(st, r, line) do
     {x, st} = fresh(st, "x_#{line}", :proj)
+    st = %{st | captures: Map.put(st.captures, x, r)}
 
     {x,
      defer(st, r, x, line, fn _inst ->
        ProcessTypes.Diagnostic.error(line, "this branch cannot bind its variable")
      end)}
   end
+
+  @impl true
+  def resolved(%{captures: captures}, t) when captures == %{}, do: t
+  def resolved(st, t), do: Types.substitute(t, st.captures)
 
   @impl true
   def note(%{record: false} = st, _event), do: st
@@ -276,14 +282,10 @@ defmodule ProcessTypes.Backend.Infer do
     |> Enum.sort_by(&hd(&1).line)
   end
 
-  defp solve(constraints, roles, opts) do
-    case tally(constraints, opts) do
-      [sigma | _] -> {[], sigma}
-      [] -> localize([], constraints, [], roles, opts)
-    end
-  end
+  defp solve(constraints, roles, opts), do: localize([], constraints, [], roles, opts)
 
-  # base has a solution, base ++ rest none.
+  # base has a solution. If base ++ rest has none, the first constraint of rest that
+  # makes it unsatisfiable is reported and removed, and so on with what follows it.
   defp localize(base, rest, errors, roles, opts) do
     case tally(base ++ rest, opts) do
       [sigma | _] ->

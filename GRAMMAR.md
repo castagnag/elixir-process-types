@@ -5,7 +5,9 @@ from the paper, §8 says so.*
 
 The prototype type-checks programs (it never runs them) against the type system of
 Sections 3–6 of the paper. By default it infers the decorations that annotations do not
-write, as in Section 8; in ground mode it reads them as written (§9). A program is a
+write, as in Section 8; in ground mode it reads them as written (§9); in reconstruction
+mode it also reconstructs the interfaces that `spawn`s do not declare, as in Section 9
+(§11). A program is a
 fragment of Elixir extended with *annotation lines*, and it is read in two steps:
 
 1. every annotation line (§1) is parsed, then replaced by a blank line, so that line
@@ -359,13 +361,23 @@ is the union of the types of its body.
 
 ## 11. Reconstruction of interfaces
 
-In **reconstruction** mode (`mix typecheck --reconstruct`) a `spawn` may have no
-`$interface`: its interface is reconstructed as Section 9 of the paper prescribes
-(Definition `def:reconstruction`), and so is the interface of the main process when there
-is no `$self_interface` (in the two other modes it is `term()`). Annotated and unannotated
-`spawn`s may be mixed. A program in which every `spawn` is annotated and the interface of
-the main process is declared is checked exactly as in inference mode. Inference stays the
-default mode, and still rejects a `spawn` without annotation.
+In **reconstruction** mode a `spawn` may have no `$interface`: its interface is
+reconstructed as Section 9 of the paper prescribes (Definition `def:reconstruction`), and
+so is the interface of the main process when there is no `$self_interface` (in the two
+other modes it is `term()`). Annotated and unannotated `spawn`s may be mixed. A program in
+which every `spawn` is annotated and the interface of the main process is declared is
+checked exactly as in inference mode. Inference stays the default mode, and still rejects
+a `spawn` without annotation.
+
+The mode is chosen by `--reconstruct` in `mix typecheck`, which prints the interfaces
+found after the types of the functions, by `"mode": "reconstruct"` in `POST /check`, whose
+answer then lists them in `"interfaces"` (`line` is null for the main process), by the
+checkbox "reconstruct interfaces" of the playground, and by `mode: :reconstruct` in
+`ProcessTypes.check_string/2`, whose result has them in `interfaces`. An example with the
+line `# mode: reconstruct` is checked in this mode only by the tests, and turns the
+checkbox on when the playground loads it; its lines `# interface (line n): T` and
+`# interface (main): T` give the interfaces that must be reconstructed, as they are
+printed. For the language these lines are comments.
 
 The four steps:
 
@@ -399,12 +411,46 @@ interface never contains a message that no `receive` of the process handles, it 
 among several maximal interfaces when the process runs functions that it receives, and it
 may be too large when a branch relates two capture variables or ships a closure.
 
-Differences from the paper, all in the way the definitions of its Appendix D are computed:
+Differences from the paper, all in the way the definitions of its Appendix D are computed.
+None affects soundness, which is that of the checking step: an accepted program is one
+that inference accepts with the reconstructed interfaces declared.
 
-- The decomposition of constraints (Definition `def:recon-dec`) is read in the normal form
-  that tallying gives to each constraint, hence up to equivalence and not by form.
-- The `receive`s that a process runs are found by following the bounds between
-  decorations, a sufficient condition for the entailment of Definition `def:recon-runs`.
-- Polarities are tested semantically (a type is monotone or antitone in a variable).
-- The option of §10 is not available in this mode.
+- *Bounds.* The decomposition of constraints (Definition `def:recon-dec`) is read in the
+  normal form that tallying gives to each constraint, hence up to equivalence and not by
+  cases on its form. A refinement (ζ ∧ g) ∖ g' ≤ t is the bound ζ ≤ t ∨ ¬g ∨ g' of ζ,
+  whatever ζ is, whereas the paper reads refinements for the types of capture variables
+  only. So the process with the branch
+  `{:job, p} -> send(p, fn -> receive do {:int, n} -> n + 1 end end)`, which Section 9.6
+  gives as a limit, gets an interface that the checking step accepts
+  (`examples/recon_closure.exs`).
+- *Capture variables.* A variable that a pattern of a `receive` binds outside every tuple
+  pattern gets a type variable of its own, above the refined type of its branch, so that
+  the bounds on the message are bounds of that variable (in the paper its type is the
+  refined type itself, recognized by its form). Whether a branch of a `case` on such a
+  variable is dead is still decided on the refined type, so the branches typed are
+  those of the paper. Nothing of this happens when the program has nothing to
+  reconstruct.
+- *Receives run.* The `receive`s that a process runs are those whose input decoration is
+  reached from α by the bounds between variables that the constraints entail, or is
+  forced to `term()`, or is a written decoration above the written decorations so
+  reached: a sufficient condition for the entailment of Definition `def:recon-runs`,
+  which the paper decides with all the solutions of the constraints.
+- *Written decorations.* A function whose arrow has a written input decoration u, run by
+  the process, bounds the interface by u: F is intersected with these bounds, which the
+  equation of the paper leaves to the checking step. A `receive` typed at a written
+  decoration contributes its patterns to the coverage and no demand, since its
+  constraints have no variable and are checked at once.
+- *Polarities* are tested semantically: a type is monotone, or antitone, in a variable. A
+  variable on which a type does not depend has no polarity.
+- *Mailbox-pure functions* (Definition `def:recon-pure`) are sought among the functions
+  defined by `def` and `defp` whose arrows are undecorated or written `@[none(), term()]`
+  (a function with another written bracket is not one, nor are its callers), and the
+  inverse image of Definition `def:recon-inverse` is used for those with two to eight
+  arrows.
+- A call of an overloaded function whose domains have no variables, on an argument
+  without variables that a single arrow accepts, selects that arrow, whose decorations
+  then bound the bracket of the call (Lemma `lem:recon-select`).
+- The type ℧ of the encoding of arrows (README.md, Design) is removed from the bounds of
+  arguments.
+- The option of §10 is not available in this mode: it is ignored.
 
