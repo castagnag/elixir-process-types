@@ -143,6 +143,8 @@ defmodule ProcessTypes.Web do
     {"mixing_correlation", "mixing_correlation"},
     {"mixing_multishot", "mixing_multishot"},
     {"mixing_write", "mixing_write"},
+    {"reply_server", "Reply server (experimental split)"},
+    {"my_server", "GenServer (parametrized types)"},
     {"recon_bank", "Reconstruction: bank account"},
     {"recon_bank_errors", "Reconstruction: bank account (errors)"},
     {"recon_server", "Reconstruction: Server"},
@@ -155,9 +157,7 @@ defmodule ProcessTypes.Web do
     {"recon_limits_maximal", "Reconstruction limits 2: another maximal interface"},
     {"recon_limits_solving", "Reconstruction limits 3: polarity, cycle"},
     {"recon_limits_too_large", "Reconstruction limits 4: interface too large"},
-    {"recon_limits_overloaded", "Reconstruction limits 4: effect-overloaded function"},
-    {"reply_server", "Reply server (experimental split)"},
-    {"my_server", "MyServer (parametrized types)"}
+    {"recon_limits_overloaded", "Reconstruction limits 4: effect-overloaded function"}
   ]
 
   defp examples do
