@@ -218,3 +218,10 @@ representation of the Elixir compiler (Apache-2.0), with recursive type descript
 with type variables and tallying: the recursive types and the inference of Section 8
 are implemented on top of it. [lib/vendor/README.md](lib/vendor/README.md) records the
 commit and the changes made to the copy.
+
+## License
+
+Process Types for Elixir is distributed under the Apache License 2.0 ([LICENSE](LICENSE)),
+Copyright 2026 Giuseppe Castagna ([NOTICE](NOTICE)). The files of [lib/vendor/](lib/vendor/)
+keep the license and the copyright of the Elixir compiler (Apache-2.0, © 2021 The Elixir
+Team), as stated in their headers and in [lib/vendor/README.md](lib/vendor/README.md).

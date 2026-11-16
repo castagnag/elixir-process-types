@@ -1,0 +1,10 @@
+Process Types for Elixir
+Copyright 2026 Giuseppe Castagna
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The files of lib/vendor/ are derived from Module.Types.Descr, the type representation
+of the Elixir compiler (Copyright 2021 The Elixir Team, Apache License 2.0), as extended
+by Guillaume Duboc with recursive type descriptors, type variables and tallying (branch
+type-variables of https://github.com/gldubc/elixir). Each file keeps its SPDX lines and
+its acknowledgement; lib/vendor/README.md records the commit and the changes made here.

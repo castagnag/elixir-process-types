@@ -4,7 +4,9 @@ defmodule ProcessTypes.MixProject do
   def project do
     [
       app: :process_types,
-      version: "0.1.0",
+      version: "0.2.0",
+      description: "Process Types for Elixir: a prototype type checker for Elixir processes",
+      package: [licenses: ["Apache-2.0"]],
       # Types are built with ProcessTypes.Descr, the copy in lib/vendor/ of the type
       # representation of the compiler from Guillaume Duboc's branch with type
       # variables, tallying and recursive types; it is compiled with the project.
